@@ -1,0 +1,254 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Пользователи — Admin</title>
+<style>
+:root {
+  --bg: #0a1628;
+  --card: #0f1d35;
+  --card2: #132444;
+  --border: #1c2f52;
+  --text: #faf5ef;
+  --muted: #b8a99a;
+  --accent: #e8d5b7;
+  --accent2: #d4b896;
+  --ok: #7dd3a8;
+  --bad: #e88b8b;
+  --warn: #e8c86b;
+  --shadow: 0 12px 30px rgba(0,0,0,.4);
+}
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+body {
+  font-family: system-ui, -apple-system, sans-serif;
+  background: var(--bg);
+  color: var(--text);
+  min-height: 100vh;
+  padding: 20px;
+}
+.container { max-width: 800px; margin: 0 auto; }
+.header {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  margin-bottom: 24px;
+}
+.header h1 { font-size: 24px; font-weight: 700; flex: 1; }
+.back-btn {
+  background: var(--card2);
+  color: var(--accent);
+  border: 1px solid var(--border);
+  padding: 10px 20px;
+  border-radius: 12px;
+  cursor: pointer;
+  font-size: 14px;
+  text-decoration: none;
+  transition: background .2s;
+}
+.back-btn:hover { background: var(--border); }
+.search-box {
+  width: 100%;
+  padding: 14px 20px;
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  color: var(--text);
+  font-size: 15px;
+  margin-bottom: 20px;
+  outline: none;
+  transition: border-color .2s;
+}
+.search-box:focus { border-color: var(--accent); }
+.search-box::placeholder { color: var(--muted); }
+.user-card {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 18px;
+  padding: 20px;
+  margin-bottom: 14px;
+  box-shadow: var(--shadow);
+  transition: border-color .2s;
+}
+.user-card:hover { border-color: var(--accent2); }
+.user-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 12px;
+}
+.user-name {
+  font-size: 17px;
+  font-weight: 600;
+  color: var(--accent);
+}
+.badge {
+  padding: 4px 12px;
+  border-radius: 20px;
+  font-size: 12px;
+  font-weight: 600;
+}
+.badge-ok { background: rgba(125,211,168,.15); color: var(--ok); }
+.badge-bad { background: rgba(232,139,139,.15); color: var(--bad); }
+.user-info {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 10px;
+  margin-bottom: 14px;
+}
+.info-item { font-size: 13px; color: var(--muted); }
+.info-item span { color: var(--text); font-weight: 500; display: block; margin-top: 2px; }
+.user-actions { display: flex; gap: 10px; }
+.btn {
+  padding: 10px 20px;
+  border-radius: 12px;
+  border: none;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: opacity .2s, transform .1s;
+}
+.btn:hover { opacity: .85; }
+.btn:active { transform: scale(.97); }
+.btn-ban { background: var(--bad); color: #1a1a1a; }
+.btn-unban { background: var(--ok); color: #1a1a1a; }
+.loading {
+  text-align: center;
+  padding: 60px 20px;
+  color: var(--muted);
+  font-size: 15px;
+}
+.empty {
+  text-align: center;
+  padding: 60px 20px;
+  color: var(--muted);
+}
+.toast {
+  position: fixed;
+  bottom: 30px;
+  left: 50%;
+  transform: translateX(-50%) translateY(100px);
+  background: var(--card2);
+  border: 1px solid var(--border);
+  color: var(--text);
+  padding: 14px 28px;
+  border-radius: 14px;
+  font-size: 14px;
+  box-shadow: var(--shadow);
+  transition: transform .3s ease;
+  z-index: 100;
+}
+.toast.show { transform: translateX(-50%) translateY(0); }
+</style>
+</head>
+<body>
+
+<div class="container">
+  <div class="header">
+    <a href="admin.html" class="back-btn">&larr; Назад</a>
+    <h1>Пользователи</h1>
+  </div>
+
+  <input type="text" class="search-box" id="search" placeholder="Поиск по username...">
+
+  <div id="list">
+    <div class="loading" id="loader">Загрузка...</div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+const BASE = localStorage.getItem('worker_base') || 'https://client-qr-pay.YOUR.workers.dev';
+const TOKEN = localStorage.getItem('admin_token') || '';
+
+let allUsers = [];
+
+function headers() {
+  return { 'Content-Type': 'application/json', 'X-Admin-Token': TOKEN };
+}
+
+function showToast(msg) {
+  const t = document.getElementById('toast');
+  t.textContent = msg;
+  t.classList.add('show');
+  setTimeout(() => t.classList.remove('show'), 2500);
+}
+
+function formatDate(d) {
+  if (!d) return '—';
+  const dt = new Date(d);
+  return dt.toLocaleDateString('ru-RU', { day: '2-digit', month: '2-digit', year: 'numeric' });
+}
+
+function renderUsers(users) {
+  const list = document.getElementById('list');
+  if (!users.length) {
+    list.innerHTML = '<div class="empty">Пользователи не найдены</div>';
+    return;
+  }
+  list.innerHTML = users.map(u => `
+    <div class="user-card">
+      <div class="user-top">
+        <div class="user-name">@${u.username || '—'}</div>
+        <span class="badge ${u.banned ? 'badge-bad' : 'badge-ok'}">${u.banned ? 'Заблокирован' : 'Активен'}</span>
+      </div>
+      <div class="user-info">
+        <div class="info-item">Telegram ID<span>${u.tgId}</span></div>
+        <div class="info-item">Баланс<span>${parseFloat(u.balance || 0).toFixed(2)} USDT</span></div>
+        <div class="info-item">Регистрация<span>${formatDate(u.created || u.createdAt)}</span></div>
+      </div>
+      <div class="user-actions">
+        ${u.banned
+          ? `<button class="btn btn-unban" onclick="toggleBan('${u.tgId}', false)">Разбанить</button>`
+          : `<button class="btn btn-ban" onclick="toggleBan('${u.tgId}', true)">Забанить</button>`
+        }
+      </div>
+    </div>
+  `).join('');
+}
+
+async function loadUsers() {
+  try {
+    const res = await fetch(BASE + '/api/admin/users', { headers: headers() });
+    if (!res.ok) throw new Error('Ошибка ' + res.status);
+    const data = await res.json();
+    allUsers = data.users || data;
+    document.getElementById('loader').style.display = 'none';
+    renderUsers(allUsers);
+  } catch (e) {
+    document.getElementById('loader').textContent = 'Ошибка загрузки: ' + e.message;
+  }
+}
+
+async function toggleBan(tgId, banned) {
+  try {
+    const res = await fetch(BASE + '/api/admin/users/' + tgId, {
+      method: 'PATCH',
+      headers: headers(),
+      body: JSON.stringify({ banned })
+    });
+    if (!res.ok) throw new Error('Ошибка ' + res.status);
+    showToast(banned ? 'Пользователь заблокирован' : 'Пользователь разблокирован');
+    const idx = allUsers.findIndex(u => String(u.tgId) === String(tgId));
+    if (idx !== -1) allUsers[idx].banned = banned;
+    filterAndRender();
+  } catch (e) {
+    showToast('Ошибка: ' + e.message);
+  }
+}
+
+function filterAndRender() {
+  const q = document.getElementById('search').value.toLowerCase().trim();
+  const filtered = q
+    ? allUsers.filter(u => (u.username || '').toLowerCase().includes(q))
+    : allUsers;
+  renderUsers(filtered);
+}
+
+document.getElementById('search').addEventListener('input', filterAndRender);
+
+loadUsers();
+</script>
+</body>
+</html>

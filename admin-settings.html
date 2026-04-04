@@ -1,0 +1,315 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"/>
+  <title>Настройки</title>
+  <style>
+    :root{
+      --bg:#0a1628;--card:#0f1d35;--card2:#132444;--border:#1c2f52;
+      --text:#faf5ef;--muted:#b8a99a;--accent:#e8d5b7;--accent2:#d4b896;
+      --ok:#7dd3a8;--bad:#e88b8b;--warn:#e8c86b;
+      --shadow:0 12px 30px rgba(0,0,0,.4);
+    }
+    *{box-sizing:border-box;margin:0;padding:0}
+    body{
+      font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif;
+      background:radial-gradient(ellipse 900px 600px at 20% 0%,rgba(232,213,183,.07),transparent 60%),
+                 radial-gradient(ellipse 800px 500px at 80% 100%,rgba(125,211,168,.05),transparent 55%),
+                 var(--bg);
+      color:var(--text);min-height:100vh;
+    }
+    .wrap{max-width:540px;margin:0 auto;padding:20px 16px 40px}
+    .topBar{display:flex;align-items:center;gap:12px;margin-bottom:20px}
+    .back{
+      width:40px;height:40px;border-radius:12px;display:grid;place-items:center;
+      background:var(--card);border:1px solid var(--border);color:var(--accent);
+      text-decoration:none;font-size:18px;font-weight:900;
+    }
+    .pageTitle{font-size:20px;font-weight:900}
+
+    .section{
+      background:var(--card);border:1px solid var(--border);border-radius:18px;
+      padding:18px;margin-bottom:16px;box-shadow:var(--shadow);
+    }
+    .sectionTitle{font-size:14px;font-weight:900;color:var(--accent);margin-bottom:14px;text-transform:uppercase;letter-spacing:.5px}
+
+    .field{margin-bottom:14px}
+    .field label{display:block;font-size:12px;font-weight:800;color:var(--muted);margin-bottom:5px}
+    .field input,.field select,.field textarea{
+      width:100%;padding:12px 14px;border-radius:12px;border:1px solid var(--border);
+      background:var(--card2);color:var(--text);font-size:14px;font-weight:700;
+      outline:none;transition:border-color .2s;
+    }
+    .field input:focus,.field select:focus,.field textarea:focus{border-color:var(--accent)}
+    .field textarea{resize:vertical;min-height:60px;font-family:inherit}
+    .field select{appearance:none;cursor:pointer}
+    .field .hint{font-size:11px;color:var(--muted);margin-top:4px}
+
+    .btn{
+      display:inline-flex;align-items:center;justify-content:center;gap:8px;
+      padding:13px 22px;border-radius:14px;border:none;
+      font-size:14px;font-weight:900;cursor:pointer;transition:all .2s;
+      min-width:120px;
+    }
+    .btn.primary{background:linear-gradient(135deg,var(--accent),var(--accent2));color:#0a1628}
+    .btn.primary:hover{opacity:.9;transform:translateY(-1px)}
+    .btn.ok{background:rgba(125,211,168,.15);border:1px solid rgba(125,211,168,.3);color:var(--ok)}
+    .btn.bad{background:rgba(232,139,139,.12);border:1px solid rgba(232,139,139,.25);color:var(--bad)}
+    .btn:disabled{opacity:.5;cursor:not-allowed;transform:none}
+
+    .rateBox{
+      display:flex;align-items:center;gap:12px;flex-wrap:wrap;
+      padding:12px 14px;border-radius:12px;background:var(--card2);border:1px solid var(--border);
+      margin-bottom:14px;
+    }
+    .rateBox .val{font-size:18px;font-weight:900;color:var(--accent)}
+    .rateBox .label{font-size:12px;color:var(--muted)}
+
+    .toast{
+      position:fixed;bottom:24px;left:50%;transform:translateX(-50%);
+      padding:12px 22px;border-radius:14px;font-weight:800;font-size:13px;
+      background:var(--card);border:1px solid var(--border);color:var(--ok);
+      box-shadow:var(--shadow);opacity:0;transition:opacity .3s;pointer-events:none;
+      z-index:999;
+    }
+    .toast.show{opacity:1}
+    .toast.err{color:var(--bad)}
+
+    .depSection{border-top:1px solid var(--border);padding-top:16px;margin-top:10px}
+    .rowBtns{display:flex;gap:10px;flex-wrap:wrap;margin-top:8px}
+
+    @media(max-width:400px){
+      .wrap{padding:14px 10px 30px}
+      .section{padding:14px}
+    }
+  </style>
+</head>
+<body>
+<div class="wrap">
+  <div class="topBar">
+    <a class="back" href="./admin.html">&larr;</a>
+    <div class="pageTitle">Настройки</div>
+  </div>
+
+  <!-- Rate -->
+  <div class="section">
+    <div class="sectionTitle">Курс USDT / RUB</div>
+    <div class="rateBox">
+      <div>
+        <div class="val" id="curRate">—</div>
+        <div class="label">Текущий курс</div>
+      </div>
+      <button class="btn ok" id="btnRefreshRate" type="button" style="margin-left:auto">Обновить</button>
+    </div>
+
+    <div class="field">
+      <label>Режим курса</label>
+      <select id="rateMode">
+        <option value="rapira">Rapira (авто)</option>
+        <option value="manual">Ручной</option>
+      </select>
+    </div>
+    <div class="field" id="manualRow" style="display:none">
+      <label>Ручной курс (₽ за 1 USDT)</label>
+      <input type="number" id="manualRate" step="0.01" min="0" placeholder="92.50"/>
+    </div>
+    <div class="field">
+      <label>Наценка к курсу (₽)</label>
+      <input type="number" id="rateMarkup" step="0.01" placeholder="0"/>
+      <div class="hint">Добавляется к курсу. Можно отрицательная (скидка).</div>
+    </div>
+  </div>
+
+  <!-- General -->
+  <div class="section">
+    <div class="sectionTitle">Общее</div>
+    <div class="field">
+      <label>Название приложения</label>
+      <input type="text" id="siteName" placeholder="QR Pay"/>
+    </div>
+    <div class="field">
+      <label>Username бота (без @)</label>
+      <input type="text" id="botUsername" placeholder="MyPayBot"/>
+    </div>
+    <div class="field">
+      <label>URL мини-приложения (WebApp)</label>
+      <input type="text" id="webAppUrl" placeholder="https://user.github.io/client-qr-pay/"/>
+      <div class="hint">Полный URL для кнопки "Открыть приложение" в боте</div>
+    </div>
+  </div>
+
+  <!-- USDT wallet -->
+  <div class="section">
+    <div class="sectionTitle">USDT-кошелёк для пополнений</div>
+    <div class="field">
+      <label>Адрес кошелька</label>
+      <input type="text" id="usdtWallet" placeholder="TXyz..."/>
+    </div>
+    <div class="field">
+      <label>Сеть</label>
+      <select id="usdtNetwork">
+        <option value="TRC20">TRC20 (Tron)</option>
+        <option value="ERC20">ERC20 (Ethereum)</option>
+        <option value="BEP20">BEP20 (BSC)</option>
+        <option value="TON">TON</option>
+      </select>
+    </div>
+  </div>
+
+  <!-- Notifications -->
+  <div class="section">
+    <div class="sectionTitle">Уведомления</div>
+    <div class="field">
+      <label>Telegram ID админов (через запятую)</label>
+      <textarea id="adminTgIds" placeholder="123456789, 987654321"></textarea>
+      <div class="hint">Сюда будут приходить уведомления о новых QR, выводах и т.д.</div>
+    </div>
+  </div>
+
+  <!-- Save -->
+  <div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:24px">
+    <button class="btn primary" id="btnSave" type="button">Сохранить настройки</button>
+  </div>
+
+  <!-- Manual deposit -->
+  <div class="section">
+    <div class="sectionTitle">Ручное пополнение баланса</div>
+    <div class="field">
+      <label>Username или Telegram ID</label>
+      <input type="text" id="depUser" placeholder="@username или 123456789"/>
+    </div>
+    <div class="field">
+      <label>Сумма USDT</label>
+      <input type="number" id="depAmount" step="0.01" min="0" placeholder="100"/>
+    </div>
+    <div class="field">
+      <label>TX Hash (необязательно)</label>
+      <input type="text" id="depTx" placeholder=""/>
+    </div>
+    <button class="btn ok" id="btnDeposit" type="button">Зачислить пополнение</button>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+(()=>{
+  const WB = (localStorage.getItem("worker_base")||"https://client-qr-pay.YOUR.workers.dev").replace(/\/+$/,"");
+  const TOKEN = localStorage.getItem("admin_token")||"";
+
+  async function api(path, method="GET", body){
+    const h = {"X-Admin-Token":TOKEN};
+    const opts = {method, headers:h};
+    if(body){
+      h["Content-Type"]="application/json";
+      opts.body=JSON.stringify(body);
+    }
+    const r = await fetch(WB+path, opts);
+    const j = await r.json();
+    if(!r.ok||!j.ok) throw new Error(j.error||"HTTP "+r.status);
+    return j;
+  }
+
+  function toast(msg, err){
+    const el=document.getElementById("toast");
+    el.textContent=msg;
+    el.className="toast show"+(err?" err":"");
+    clearTimeout(toast._t);
+    toast._t=setTimeout(()=>el.className="toast",2500);
+  }
+
+  const $=id=>document.getElementById(id);
+
+  // ── load settings ──
+  async function load(){
+    try{
+      const j=await api("/api/admin/settings");
+      const s=j.settings||{};
+      $("rateMode").value=s.rateMode||"rapira";
+      $("manualRate").value=s.manualRate||"";
+      $("rateMarkup").value=s.rateMarkup||"";
+      $("siteName").value=s.siteName||"";
+      $("botUsername").value=s.botUsername||"";
+      $("webAppUrl").value=s.webAppUrl||"";
+      $("usdtWallet").value=s.usdtWallet||"";
+      $("usdtNetwork").value=s.usdtNetwork||"TRC20";
+      $("adminTgIds").value=(s.adminTgIds||[]).join(", ");
+      toggleManual();
+      if(j.currentRate>0) $("curRate").textContent=Number(j.currentRate).toFixed(2)+" ₽";
+    }catch(e){
+      toast("Ошибка загрузки: "+e.message, true);
+    }
+  }
+
+  function toggleManual(){
+    $("manualRow").style.display=$("rateMode").value==="manual"?"block":"none";
+  }
+  $("rateMode").addEventListener("change", toggleManual);
+
+  // ── refresh rate ──
+  $("btnRefreshRate").onclick=async()=>{
+    try{
+      const j=await api("/api/rate");
+      $("curRate").textContent=j.rate>0?Number(j.rate).toFixed(2)+" ₽":"—";
+      toast("Курс обновлён");
+    }catch(e){toast("Ошибка: "+e.message,true)}
+  };
+
+  // ── save ──
+  $("btnSave").onclick=async()=>{
+    $("btnSave").disabled=true;
+    try{
+      const idsRaw=$("adminTgIds").value||"";
+      const adminTgIds=idsRaw.split(/[,;\s]+/).map(s=>s.trim()).filter(Boolean);
+
+      await api("/api/admin/settings","POST",{
+        rateMode: $("rateMode").value,
+        manualRate: Number($("manualRate").value)||0,
+        rateMarkup: Number($("rateMarkup").value)||0,
+        siteName: $("siteName").value.trim(),
+        botUsername: $("botUsername").value.trim().replace(/^@/,""),
+        webAppUrl: $("webAppUrl").value.trim(),
+        usdtWallet: $("usdtWallet").value.trim(),
+        usdtNetwork: $("usdtNetwork").value,
+        adminTgIds,
+      });
+      toast("Настройки сохранены!");
+    }catch(e){
+      toast("Ошибка: "+e.message,true);
+    }finally{
+      $("btnSave").disabled=false;
+    }
+  };
+
+  // ── manual deposit ──
+  $("btnDeposit").onclick=async()=>{
+    const raw=$("depUser").value.trim();
+    const amt=Number($("depAmount").value)||0;
+    const tx=$("depTx").value.trim();
+    if(!raw){toast("Укажите username или tgId",true);return}
+    if(amt<=0){toast("Укажите сумму > 0",true);return}
+
+    $("btnDeposit").disabled=true;
+    try{
+      const isId=/^\d+$/.test(raw);
+      const body={amountUsdt:amt, txHash:tx};
+      if(isId) body.tgId=raw; else body.username=raw.replace(/^@/,"");
+
+      const j=await api("/api/admin/deposits/confirm","POST",body);
+      toast("Зачислено! Новый баланс: "+(j.newBalance!=null?Number(j.newBalance).toFixed(2)+" USDT":"OK"));
+      $("depUser").value="";
+      $("depAmount").value="";
+      $("depTx").value="";
+    }catch(e){
+      toast("Ошибка: "+e.message,true);
+    }finally{
+      $("btnDeposit").disabled=false;
+    }
+  };
+
+  load();
+})();
+</script>
+</body>
+</html>

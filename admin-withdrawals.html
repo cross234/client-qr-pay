@@ -1,0 +1,424 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Выводы — Admin</title>
+<style>
+:root {
+  --bg: #0a1628;
+  --card: #0f1d35;
+  --card2: #132444;
+  --border: #1c2f52;
+  --text: #faf5ef;
+  --muted: #b8a99a;
+  --accent: #e8d5b7;
+  --accent2: #d4b896;
+  --ok: #7dd3a8;
+  --bad: #e88b8b;
+  --warn: #e8c86b;
+  --shadow: 0 12px 30px rgba(0,0,0,.4);
+}
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+body {
+  font-family: system-ui, -apple-system, sans-serif;
+  background: var(--bg);
+  color: var(--text);
+  min-height: 100vh;
+  padding: 20px;
+}
+.container { max-width: 800px; margin: 0 auto; }
+.header {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  margin-bottom: 24px;
+}
+.header h1 { font-size: 24px; font-weight: 700; flex: 1; }
+.back-btn {
+  background: var(--card2);
+  color: var(--accent);
+  border: 1px solid var(--border);
+  padding: 10px 20px;
+  border-radius: 12px;
+  cursor: pointer;
+  font-size: 14px;
+  text-decoration: none;
+  transition: background .2s;
+}
+.back-btn:hover { background: var(--border); }
+.tabs {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 20px;
+  flex-wrap: wrap;
+}
+.tab {
+  padding: 10px 20px;
+  border-radius: 12px;
+  border: 1px solid var(--border);
+  background: var(--card);
+  color: var(--muted);
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all .2s;
+}
+.tab:hover { border-color: var(--accent2); color: var(--text); }
+.tab.active {
+  background: var(--accent);
+  color: #0a1628;
+  border-color: var(--accent);
+}
+.wd-card {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 18px;
+  padding: 20px;
+  margin-bottom: 14px;
+  box-shadow: var(--shadow);
+  transition: border-color .2s;
+}
+.wd-card:hover { border-color: var(--accent2); }
+.wd-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 12px;
+}
+.wd-user {
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--accent);
+}
+.wd-amount {
+  font-size: 18px;
+  font-weight: 700;
+}
+.badge {
+  display: inline-block;
+  padding: 4px 12px;
+  border-radius: 20px;
+  font-size: 12px;
+  font-weight: 600;
+}
+.badge-pending { background: rgba(232,200,107,.15); color: var(--warn); }
+.badge-approved { background: rgba(125,211,168,.15); color: var(--ok); }
+.badge-rejected { background: rgba(232,139,139,.15); color: var(--bad); }
+.wd-details {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+  margin-bottom: 14px;
+}
+.detail-item { font-size: 13px; color: var(--muted); }
+.detail-item span { color: var(--text); font-weight: 500; display: block; margin-top: 2px; word-break: break-all; }
+.wd-dest {
+  font-size: 13px;
+  color: var(--muted);
+  margin-bottom: 14px;
+}
+.wd-dest span {
+  color: var(--text);
+  font-weight: 500;
+  display: block;
+  margin-top: 2px;
+  word-break: break-all;
+  font-family: monospace;
+  font-size: 12px;
+}
+.wd-actions { display: flex; gap: 10px; }
+.btn {
+  padding: 10px 20px;
+  border-radius: 12px;
+  border: none;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: opacity .2s, transform .1s;
+}
+.btn:hover { opacity: .85; }
+.btn:active { transform: scale(.97); }
+.btn-approve { background: var(--ok); color: #1a1a1a; }
+.btn-reject { background: var(--bad); color: #1a1a1a; }
+.loading {
+  text-align: center;
+  padding: 60px 20px;
+  color: var(--muted);
+  font-size: 15px;
+}
+.empty {
+  text-align: center;
+  padding: 60px 20px;
+  color: var(--muted);
+}
+.toast {
+  position: fixed;
+  bottom: 30px;
+  left: 50%;
+  transform: translateX(-50%) translateY(100px);
+  background: var(--card2);
+  border: 1px solid var(--border);
+  color: var(--text);
+  padding: 14px 28px;
+  border-radius: 14px;
+  font-size: 14px;
+  box-shadow: var(--shadow);
+  transition: transform .3s ease;
+  z-index: 100;
+}
+.toast.show { transform: translateX(-50%) translateY(0); }
+/* Modal overlay */
+.modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,.6);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 200;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity .2s;
+}
+.modal-overlay.open { opacity: 1; pointer-events: auto; }
+.modal {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 20px;
+  padding: 28px;
+  width: 90%;
+  max-width: 420px;
+  box-shadow: var(--shadow);
+}
+.modal h3 { margin-bottom: 16px; font-size: 18px; }
+.modal input, .modal textarea {
+  width: 100%;
+  padding: 12px 16px;
+  background: var(--card2);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  color: var(--text);
+  font-size: 14px;
+  margin-bottom: 16px;
+  outline: none;
+  font-family: inherit;
+}
+.modal input:focus, .modal textarea:focus { border-color: var(--accent); }
+.modal-btns { display: flex; gap: 10px; justify-content: flex-end; }
+.btn-cancel {
+  background: var(--card2);
+  color: var(--muted);
+  border: 1px solid var(--border);
+  padding: 10px 20px;
+  border-radius: 12px;
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: 600;
+}
+</style>
+</head>
+<body>
+
+<div class="container">
+  <div class="header">
+    <a href="admin.html" class="back-btn">&larr; Назад</a>
+    <h1>Выводы</h1>
+  </div>
+
+  <div class="tabs">
+    <button class="tab active" data-filter="pending">Ожидают</button>
+    <button class="tab" data-filter="approved">Одобрено</button>
+    <button class="tab" data-filter="rejected">Отклонено</button>
+    <button class="tab" data-filter="all">Все</button>
+  </div>
+
+  <div id="list">
+    <div class="loading" id="loader">Загрузка...</div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<!-- Approve Modal -->
+<div class="modal-overlay" id="approveModal">
+  <div class="modal">
+    <h3>Одобрить вывод</h3>
+    <input type="text" id="txHashInput" placeholder="TX Hash транзакции">
+    <div class="modal-btns">
+      <button class="btn-cancel" onclick="closeModals()">Отмена</button>
+      <button class="btn btn-approve" id="approveConfirmBtn">Одобрить</button>
+    </div>
+  </div>
+</div>
+
+<!-- Reject Modal -->
+<div class="modal-overlay" id="rejectModal">
+  <div class="modal">
+    <h3>Отклонить вывод</h3>
+    <textarea id="rejectReasonInput" rows="3" placeholder="Причина отклонения"></textarea>
+    <div class="modal-btns">
+      <button class="btn-cancel" onclick="closeModals()">Отмена</button>
+      <button class="btn btn-reject" id="rejectConfirmBtn">Отклонить</button>
+    </div>
+  </div>
+</div>
+
+<script>
+const BASE = localStorage.getItem('worker_base') || 'https://client-qr-pay.YOUR.workers.dev';
+const TOKEN = localStorage.getItem('admin_token') || '';
+
+let allItems = [];
+let currentFilter = 'pending';
+let pendingActionId = null;
+
+function headers() {
+  return { 'Content-Type': 'application/json', 'X-Admin-Token': TOKEN };
+}
+
+function showToast(msg) {
+  const t = document.getElementById('toast');
+  t.textContent = msg;
+  t.classList.add('show');
+  setTimeout(() => t.classList.remove('show'), 2500);
+}
+
+function closeModals() {
+  document.getElementById('approveModal').classList.remove('open');
+  document.getElementById('rejectModal').classList.remove('open');
+  pendingActionId = null;
+}
+
+function formatDate(d) {
+  if (!d) return '—';
+  const dt = new Date(d);
+  return dt.toLocaleDateString('ru-RU', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' });
+}
+
+function statusBadge(status) {
+  const s = (status || '').toLowerCase();
+  if (s === 'pending') return '<span class="badge badge-pending">Ожидает</span>';
+  if (s === 'approved') return '<span class="badge badge-approved">Одобрено</span>';
+  if (s === 'rejected') return '<span class="badge badge-rejected">Отклонено</span>';
+  return '<span class="badge badge-pending">' + status + '</span>';
+}
+
+function renderItems(items) {
+  const list = document.getElementById('list');
+  if (!items.length) {
+    list.innerHTML = '<div class="empty">Нет записей</div>';
+    return;
+  }
+  list.innerHTML = items.map(w => `
+    <div class="wd-card">
+      <div class="wd-top">
+        <div>
+          <div class="wd-user">@${w.username || '—'}</div>
+        </div>
+        <div style="text-align:right">
+          <div class="wd-amount">${parseFloat(w.amount || 0).toFixed(2)} USDT</div>
+          ${statusBadge(w.status)}
+        </div>
+      </div>
+      <div class="wd-dest">
+        Адрес назначения / Сеть
+        <span>${w.address || w.destination || '—'} (${w.network || '—'})</span>
+      </div>
+      <div class="wd-details">
+        <div class="detail-item">Дата<span>${formatDate(w.createdAt || w.date || w.created)}</span></div>
+        <div class="detail-item">ID<span>${w.id || '—'}</span></div>
+      </div>
+      ${(w.status || '').toLowerCase() === 'pending' ? `
+      <div class="wd-actions">
+        <button class="btn btn-approve" onclick="openApprove('${w.id}')">&#10003; Одобрить</button>
+        <button class="btn btn-reject" onclick="openReject('${w.id}')">&#10007; Отклонить</button>
+      </div>
+      ` : ''}
+    </div>
+  `).join('');
+}
+
+function filterItems() {
+  if (currentFilter === 'all') return allItems;
+  return allItems.filter(w => (w.status || '').toLowerCase() === currentFilter);
+}
+
+async function loadWithdrawals() {
+  try {
+    const res = await fetch(BASE + '/api/admin/withdrawals', { headers: headers() });
+    if (!res.ok) throw new Error('Ошибка ' + res.status);
+    const data = await res.json();
+    allItems = data.items || data.withdrawals || data;
+    document.getElementById('loader').style.display = 'none';
+    renderItems(filterItems());
+  } catch (e) {
+    document.getElementById('loader').textContent = 'Ошибка загрузки: ' + e.message;
+  }
+}
+
+function openApprove(id) {
+  pendingActionId = id;
+  document.getElementById('txHashInput').value = '';
+  document.getElementById('approveModal').classList.add('open');
+}
+
+function openReject(id) {
+  pendingActionId = id;
+  document.getElementById('rejectReasonInput').value = '';
+  document.getElementById('rejectModal').classList.add('open');
+}
+
+document.getElementById('approveConfirmBtn').addEventListener('click', async () => {
+  const txHash = document.getElementById('txHashInput').value.trim();
+  if (!txHash) { showToast('Введите TX Hash'); return; }
+  try {
+    const res = await fetch(BASE + '/api/admin/withdrawals/' + pendingActionId + '/approve', {
+      method: 'POST',
+      headers: headers(),
+      body: JSON.stringify({ txHash })
+    });
+    if (!res.ok) throw new Error('Ошибка ' + res.status);
+    showToast('Вывод одобрен');
+    closeModals();
+    const idx = allItems.findIndex(w => String(w.id) === String(pendingActionId));
+    if (idx !== -1) allItems[idx].status = 'approved';
+    renderItems(filterItems());
+  } catch (e) {
+    showToast('Ошибка: ' + e.message);
+  }
+});
+
+document.getElementById('rejectConfirmBtn').addEventListener('click', async () => {
+  const reason = document.getElementById('rejectReasonInput').value.trim();
+  if (!reason) { showToast('Введите причину'); return; }
+  try {
+    const res = await fetch(BASE + '/api/admin/withdrawals/' + pendingActionId + '/reject', {
+      method: 'POST',
+      headers: headers(),
+      body: JSON.stringify({ reason })
+    });
+    if (!res.ok) throw new Error('Ошибка ' + res.status);
+    showToast('Вывод отклонён');
+    closeModals();
+    const idx = allItems.findIndex(w => String(w.id) === String(pendingActionId));
+    if (idx !== -1) allItems[idx].status = 'rejected';
+    renderItems(filterItems());
+  } catch (e) {
+    showToast('Ошибка: ' + e.message);
+  }
+});
+
+// Tabs
+document.querySelectorAll('.tab').forEach(tab => {
+  tab.addEventListener('click', () => {
+    document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+    tab.classList.add('active');
+    currentFilter = tab.dataset.filter;
+    renderItems(filterItems());
+  });
+});
+
+loadWithdrawals();
+</script>
+</body>
+</html>

@@ -1,0 +1,554 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>Вход</title>
+<style>
+:root {
+  --bg: #0a1628;
+  --card: #0f1d35;
+  --card2: #132444;
+  --border: #1c2f52;
+  --text: #faf5ef;
+  --muted: #b8a99a;
+  --accent: #e8d5b7;
+  --accent2: #d4b896;
+  --ok: #7dd3a8;
+  --bad: #e88b8b;
+  --warn: #e8c86b;
+  --shadow: 0 12px 30px rgba(0,0,0,.4);
+}
+
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+body {
+  font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  background: var(--bg);
+  color: var(--text);
+  min-height: 100vh;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  padding: 20px;
+  background-image:
+    radial-gradient(ellipse at 20% 0%, rgba(30, 60, 114, 0.4) 0%, transparent 60%),
+    radial-gradient(ellipse at 80% 100%, rgba(15, 40, 80, 0.3) 0%, transparent 60%);
+}
+
+.container {
+  width: 100%;
+  max-width: 480px;
+}
+
+.logo-section {
+  text-align: center;
+  margin-bottom: 40px;
+}
+
+.logo-icon {
+  width: 72px;
+  height: 72px;
+  background: linear-gradient(135deg, var(--accent), var(--accent2));
+  border-radius: 20px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  margin-bottom: 16px;
+  box-shadow: 0 8px 24px rgba(232, 213, 183, 0.15);
+}
+
+.logo-icon svg {
+  width: 36px;
+  height: 36px;
+}
+
+.logo-section h1 {
+  font-size: 28px;
+  font-weight: 700;
+  letter-spacing: -0.5px;
+  color: var(--text);
+}
+
+.logo-section p {
+  color: var(--muted);
+  font-size: 15px;
+  margin-top: 6px;
+}
+
+.steps-container {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.step-card {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 18px;
+  padding: 24px;
+  box-shadow: var(--shadow);
+  transition: all 0.4s cubic-bezier(0.25, 0.46, 0.45, 0.94);
+  opacity: 1;
+}
+
+.step-card.inactive {
+  opacity: 0.45;
+  pointer-events: none;
+  transform: scale(0.98);
+}
+
+.step-card.completed {
+  opacity: 0.5;
+  border-color: var(--ok);
+}
+
+.step-header {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  margin-bottom: 16px;
+}
+
+.step-number {
+  width: 36px;
+  height: 36px;
+  border-radius: 12px;
+  background: var(--card2);
+  border: 1px solid var(--border);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--accent);
+  flex-shrink: 0;
+  transition: all 0.3s ease;
+}
+
+.step-card.completed .step-number {
+  background: rgba(125, 211, 168, 0.15);
+  border-color: var(--ok);
+  color: var(--ok);
+}
+
+.step-title {
+  font-size: 17px;
+  font-weight: 600;
+}
+
+.step-desc {
+  color: var(--muted);
+  font-size: 13px;
+  margin-top: 2px;
+}
+
+.bot-btn {
+  display: block;
+  width: 100%;
+  padding: 16px;
+  background: linear-gradient(135deg, var(--accent), var(--accent2));
+  color: var(--bg);
+  font-size: 16px;
+  font-weight: 700;
+  border: none;
+  border-radius: 14px;
+  cursor: pointer;
+  text-decoration: none;
+  text-align: center;
+  transition: all 0.3s ease;
+  box-shadow: 0 6px 20px rgba(232, 213, 183, 0.2);
+}
+
+.bot-btn:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 8px 28px rgba(232, 213, 183, 0.3);
+}
+
+.bot-btn:active {
+  transform: translateY(0);
+}
+
+.input-group {
+  position: relative;
+}
+
+.input-group input {
+  width: 100%;
+  padding: 14px 18px;
+  background: var(--card2);
+  border: 1.5px solid var(--border);
+  border-radius: 14px;
+  color: var(--text);
+  font-size: 16px;
+  font-family: system-ui;
+  outline: none;
+  transition: border-color 0.3s ease, box-shadow 0.3s ease;
+}
+
+.input-group input::placeholder {
+  color: var(--muted);
+  opacity: 0.6;
+}
+
+.input-group input:focus {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px rgba(232, 213, 183, 0.1);
+}
+
+.submit-btn {
+  width: 100%;
+  padding: 14px;
+  margin-top: 12px;
+  background: var(--card2);
+  border: 1.5px solid var(--border);
+  border-radius: 14px;
+  color: var(--accent);
+  font-size: 15px;
+  font-weight: 600;
+  font-family: system-ui;
+  cursor: pointer;
+  transition: all 0.3s ease;
+}
+
+.submit-btn:hover {
+  background: var(--border);
+  border-color: var(--accent);
+}
+
+.submit-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.submit-btn.loading {
+  pointer-events: none;
+  opacity: 0.6;
+}
+
+.banner {
+  position: fixed;
+  top: 20px;
+  left: 50%;
+  transform: translateX(-50%) translateY(-100px);
+  padding: 14px 24px;
+  border-radius: 14px;
+  font-size: 14px;
+  font-weight: 600;
+  z-index: 1000;
+  transition: transform 0.4s cubic-bezier(0.34, 1.56, 0.64, 1);
+  max-width: calc(100% - 40px);
+  text-align: center;
+  box-shadow: var(--shadow);
+}
+
+.banner.show {
+  transform: translateX(-50%) translateY(0);
+}
+
+.banner.error {
+  background: rgba(232, 139, 139, 0.15);
+  border: 1px solid var(--bad);
+  color: var(--bad);
+}
+
+.banner.success {
+  background: rgba(125, 211, 168, 0.15);
+  border: 1px solid var(--ok);
+  color: var(--ok);
+}
+
+.banner.warning {
+  background: rgba(232, 200, 107, 0.15);
+  border: 1px solid var(--warn);
+  color: var(--warn);
+}
+
+.code-inputs {
+  display: flex;
+  gap: 8px;
+  justify-content: center;
+}
+
+.code-inputs input {
+  width: 46px;
+  height: 54px;
+  text-align: center;
+  font-size: 22px;
+  font-weight: 700;
+  background: var(--card2);
+  border: 1.5px solid var(--border);
+  border-radius: 12px;
+  color: var(--text);
+  font-family: system-ui;
+  outline: none;
+  transition: border-color 0.3s ease, box-shadow 0.3s ease;
+}
+
+.code-inputs input:focus {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px rgba(232, 213, 183, 0.1);
+}
+</style>
+</head>
+<body>
+
+<div class="banner" id="banner"></div>
+
+<div class="container">
+  <div class="logo-section">
+    <div class="logo-icon">
+      <svg viewBox="0 0 24 24" fill="none" stroke="#0a1628" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <rect x="3" y="3" width="7" height="7" rx="1"/>
+        <rect x="14" y="3" width="7" height="7" rx="1"/>
+        <rect x="3" y="14" width="7" height="7" rx="1"/>
+        <rect x="14" y="14" width="7" height="7" rx="1"/>
+      </svg>
+    </div>
+    <h1>Вход</h1>
+    <p>Авторизация через Telegram</p>
+  </div>
+
+  <div class="steps-container">
+    <!-- Step 1 -->
+    <div class="step-card" id="step1">
+      <div class="step-header">
+        <div class="step-number">1</div>
+        <div>
+          <div class="step-title">Запустите бота</div>
+          <div class="step-desc">Откройте Telegram и нажмите Start</div>
+        </div>
+      </div>
+      <a class="bot-btn" id="botLink" target="_blank">Открыть бота в Telegram</a>
+    </div>
+
+    <!-- Step 2 -->
+    <div class="step-card inactive" id="step2">
+      <div class="step-header">
+        <div class="step-number">2</div>
+        <div>
+          <div class="step-title">Введите username</div>
+          <div class="step-desc">Ваш Telegram @username</div>
+        </div>
+      </div>
+      <div class="input-group">
+        <input type="text" id="usernameInput" placeholder="@username" autocomplete="off" autocapitalize="off" spellcheck="false">
+      </div>
+      <button class="submit-btn" id="sendCodeBtn" disabled>Получить код</button>
+    </div>
+
+    <!-- Step 3 -->
+    <div class="step-card inactive" id="step3">
+      <div class="step-header">
+        <div class="step-number">3</div>
+        <div>
+          <div class="step-title">Введите код</div>
+          <div class="step-desc">6-значный код из бота</div>
+        </div>
+      </div>
+      <div class="code-inputs" id="codeInputs">
+        <input type="text" maxlength="1" inputmode="numeric" pattern="[0-9]" data-idx="0">
+        <input type="text" maxlength="1" inputmode="numeric" pattern="[0-9]" data-idx="1">
+        <input type="text" maxlength="1" inputmode="numeric" pattern="[0-9]" data-idx="2">
+        <input type="text" maxlength="1" inputmode="numeric" pattern="[0-9]" data-idx="3">
+        <input type="text" maxlength="1" inputmode="numeric" pattern="[0-9]" data-idx="4">
+        <input type="text" maxlength="1" inputmode="numeric" pattern="[0-9]" data-idx="5">
+      </div>
+      <button class="submit-btn" id="verifyBtn" disabled>Подтвердить</button>
+    </div>
+  </div>
+</div>
+
+<script>
+(function() {
+  const API = localStorage.getItem('worker_base') || 'https://client-qr-pay.YOUR.workers.dev';
+  const botDefault = 'https://t.me/PLACEHOLDER_bot?start=reg';
+
+  // Elements
+  const step1 = document.getElementById('step1');
+  const step2 = document.getElementById('step2');
+  const step3 = document.getElementById('step3');
+  const botLink = document.getElementById('botLink');
+  const usernameInput = document.getElementById('usernameInput');
+  const sendCodeBtn = document.getElementById('sendCodeBtn');
+  const codeInputs = document.getElementById('codeInputs');
+  const verifyBtn = document.getElementById('verifyBtn');
+  const bannerEl = document.getElementById('banner');
+
+  let savedUsername = '';
+
+  // Init bot link
+  botLink.href = localStorage.getItem('bot_link') || botDefault;
+
+  // Check existing auth
+  async function checkAuth() {
+    const token = localStorage.getItem('auth_token');
+    if (!token) return;
+    try {
+      const resp = await fetch(API + '/api/me', {
+        headers: { 'Authorization': 'Bearer ' + token }
+      });
+      if (resp.ok) {
+        window.location.href = 'index.html';
+      }
+    } catch(e) {}
+  }
+  checkAuth();
+
+  // Banner
+  function showBanner(msg, type) {
+    bannerEl.textContent = msg;
+    bannerEl.className = 'banner ' + type;
+    requestAnimationFrame(() => bannerEl.classList.add('show'));
+    setTimeout(() => bannerEl.classList.remove('show'), 3500);
+  }
+
+  // Step 1: bot button click activates step 2
+  botLink.addEventListener('click', function() {
+    setTimeout(() => {
+      step1.classList.add('completed');
+      step2.classList.remove('inactive');
+      usernameInput.focus();
+    }, 500);
+  });
+
+  // Step 2: username input
+  usernameInput.addEventListener('input', function() {
+    const val = usernameInput.value.replace(/^@/, '').trim();
+    sendCodeBtn.disabled = val.length < 2;
+  });
+
+  usernameInput.addEventListener('keydown', function(e) {
+    if (e.key === 'Enter' && !sendCodeBtn.disabled) sendCodeBtn.click();
+  });
+
+  sendCodeBtn.addEventListener('click', async function() {
+    const username = usernameInput.value.replace(/^@/, '').trim();
+    if (!username) return;
+
+    sendCodeBtn.classList.add('loading');
+    sendCodeBtn.textContent = 'Отправка...';
+
+    try {
+      const resp = await fetch(API + '/api/request_code', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ username })
+      });
+
+      if (resp.status === 404) {
+        showBanner('Сначала запустите бота', 'warning');
+        sendCodeBtn.classList.remove('loading');
+        sendCodeBtn.textContent = 'Получить код';
+        return;
+      }
+
+      if (!resp.ok) {
+        const data = await resp.json().catch(() => ({}));
+        throw new Error(data.error || 'Ошибка сервера');
+      }
+
+      savedUsername = username;
+      step2.classList.add('completed');
+      step3.classList.remove('inactive');
+      codeInputs.querySelector('input').focus();
+      showBanner('Код отправлен в бота', 'success');
+
+    } catch(e) {
+      showBanner(e.message || 'Ошибка соединения', 'error');
+    }
+
+    sendCodeBtn.classList.remove('loading');
+    sendCodeBtn.textContent = 'Получить код';
+  });
+
+  // Step 3: code inputs
+  const codeFields = codeInputs.querySelectorAll('input');
+
+  codeFields.forEach((field, idx) => {
+    field.addEventListener('input', function(e) {
+      const val = field.value.replace(/\D/g, '');
+      field.value = val.charAt(0) || '';
+
+      if (val && idx < 5) {
+        codeFields[idx + 1].focus();
+      }
+      checkCode();
+    });
+
+    field.addEventListener('keydown', function(e) {
+      if (e.key === 'Backspace' && !field.value && idx > 0) {
+        codeFields[idx - 1].focus();
+      }
+      if (e.key === 'Enter' && !verifyBtn.disabled) {
+        verifyBtn.click();
+      }
+    });
+
+    field.addEventListener('paste', function(e) {
+      e.preventDefault();
+      const paste = (e.clipboardData || window.clipboardData).getData('text').replace(/\D/g, '');
+      for (let i = 0; i < 6 && i < paste.length; i++) {
+        codeFields[i].value = paste[i];
+      }
+      if (paste.length >= 6) codeFields[5].focus();
+      checkCode();
+    });
+  });
+
+  function getCode() {
+    return Array.from(codeFields).map(f => f.value).join('');
+  }
+
+  function checkCode() {
+    verifyBtn.disabled = getCode().length < 6;
+  }
+
+  verifyBtn.addEventListener('click', async function() {
+    const code = getCode();
+    if (code.length < 6) return;
+
+    verifyBtn.classList.add('loading');
+    verifyBtn.textContent = 'Проверка...';
+
+    try {
+      const resp = await fetch(API + '/api/verify_code', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ code, username: savedUsername })
+      });
+
+      if (!resp.ok) {
+        const data = await resp.json().catch(() => ({}));
+        throw new Error(data.error || 'Неверный код');
+      }
+
+      const data = await resp.json();
+      localStorage.setItem('auth_token', data.token);
+      if (data.user) {
+        sessionStorage.setItem('user_data', JSON.stringify(data.user));
+      }
+
+      showBanner('Успешная авторизация!', 'success');
+      setTimeout(() => {
+        window.location.href = 'index.html';
+      }, 600);
+
+    } catch(e) {
+      showBanner(e.message || 'Ошибка проверки кода', 'error');
+      codeFields.forEach(f => f.value = '');
+      codeFields[0].focus();
+      verifyBtn.disabled = true;
+    }
+
+    verifyBtn.classList.remove('loading');
+    verifyBtn.textContent = 'Подтвердить';
+  });
+})();
+</script>
+</body>
+</html>

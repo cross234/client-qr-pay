@@ -1,0 +1,273 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Админ-панель</title>
+<style>
+:root {
+  --bg: #0a1628;
+  --card: #0f1d35;
+  --card2: #132444;
+  --border: #1c2f52;
+  --text: #faf5ef;
+  --muted: #b8a99a;
+  --accent: #e8d5b7;
+  --accent2: #d4b896;
+  --ok: #7dd3a8;
+  --bad: #e88b8b;
+  --warn: #e8c86b;
+  --shadow: 0 12px 30px rgba(0,0,0,.4);
+}
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+body {
+  font-family: system-ui, -apple-system, sans-serif;
+  background: var(--bg);
+  color: var(--text);
+  min-height: 100vh;
+  padding: 20px;
+}
+.container { max-width: 900px; margin: 0 auto; }
+h1 { font-size: 1.6rem; margin-bottom: 24px; color: var(--accent); }
+
+/* Login */
+.login-box {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  padding: 24px;
+  margin-bottom: 24px;
+  box-shadow: var(--shadow);
+}
+.login-box label { display: block; margin-bottom: 8px; color: var(--muted); font-size: .9rem; }
+.login-row { display: flex; gap: 12px; }
+.login-row input {
+  flex: 1;
+  padding: 12px 16px;
+  border-radius: 12px;
+  border: 1px solid var(--border);
+  background: var(--card2);
+  color: var(--text);
+  font-size: 1rem;
+  outline: none;
+}
+.login-row input:focus { border-color: var(--accent); }
+.btn {
+  padding: 12px 24px;
+  border-radius: 12px;
+  border: none;
+  font-size: .95rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all .2s;
+}
+.btn-accent {
+  background: var(--accent);
+  color: var(--bg);
+}
+.btn-accent:hover { background: var(--accent2); }
+
+/* Stats grid */
+.stats-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
+  gap: 16px;
+  margin-bottom: 28px;
+}
+.stat-card {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 18px;
+  padding: 20px;
+  box-shadow: var(--shadow);
+  transition: transform .2s;
+}
+.stat-card:hover { transform: translateY(-2px); }
+.stat-label { font-size: .85rem; color: var(--muted); margin-bottom: 6px; }
+.stat-value { font-size: 1.7rem; font-weight: 700; }
+.stat-card.highlight { border-color: var(--warn); }
+.stat-card.highlight .stat-value { color: var(--warn); }
+
+.pulse-badge {
+  display: inline-block;
+  width: 10px; height: 10px;
+  background: var(--warn);
+  border-radius: 50%;
+  margin-left: 8px;
+  animation: pulse 1.2s infinite;
+}
+@keyframes pulse {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50% { opacity: .4; transform: scale(1.4); }
+}
+
+/* Nav grid */
+.nav-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  gap: 16px;
+}
+.nav-card {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 18px;
+  padding: 22px 20px;
+  text-decoration: none;
+  color: var(--text);
+  box-shadow: var(--shadow);
+  transition: all .2s;
+  position: relative;
+}
+.nav-card:hover { border-color: var(--accent); transform: translateY(-2px); }
+.nav-icon { font-size: 1.8rem; }
+.nav-label { font-size: 1rem; font-weight: 600; }
+.nav-badge {
+  position: absolute;
+  top: 12px; right: 14px;
+  background: var(--warn);
+  color: var(--bg);
+  font-size: .75rem;
+  font-weight: 700;
+  padding: 3px 9px;
+  border-radius: 20px;
+  min-width: 24px;
+  text-align: center;
+}
+
+/* Misc */
+.section-title { font-size: 1.1rem; color: var(--accent); margin-bottom: 14px; font-weight: 600; }
+.hidden { display: none !important; }
+.error-msg { color: var(--bad); margin-top: 10px; font-size: .9rem; }
+.refresh-note { color: var(--muted); font-size: .8rem; text-align: center; margin-top: 20px; }
+</style>
+</head>
+<body>
+<div class="container">
+  <h1>Админ-панель</h1>
+
+  <!-- Login -->
+  <div class="login-box" id="loginBox">
+    <label>Admin Token</label>
+    <div class="login-row">
+      <input type="password" id="tokenInput" placeholder="Введите токен...">
+      <button class="btn btn-accent" onclick="saveToken()">Сохранить</button>
+    </div>
+  </div>
+
+  <!-- Dashboard content -->
+  <div id="dashboard" class="hidden">
+    <div class="section-title">Статистика</div>
+    <div class="stats-grid" id="statsGrid"></div>
+
+    <div class="section-title">Управление</div>
+    <div class="nav-grid" id="navGrid"></div>
+
+    <div class="refresh-note">Обновление каждые 10 сек</div>
+  </div>
+
+  <div class="error-msg" id="errorMsg"></div>
+</div>
+
+<script>
+const WORKER_BASE = localStorage.getItem('worker_base') || 'https://client-qr-pay.YOUR.workers.dev';
+let refreshTimer = null;
+
+function getToken() {
+  return localStorage.getItem('admin_token') || '';
+}
+
+function saveToken() {
+  const t = document.getElementById('tokenInput').value.trim();
+  if (!t) return;
+  localStorage.setItem('admin_token', t);
+  init();
+}
+
+function apiFetch(path) {
+  return fetch(WORKER_BASE + path, {
+    headers: { 'X-Admin-Token': getToken() }
+  }).then(r => {
+    if (!r.ok) throw new Error('HTTP ' + r.status);
+    return r.json();
+  });
+}
+
+function formatRub(n) {
+  return new Intl.NumberFormat('ru-RU', { style: 'currency', currency: 'RUB', maximumFractionDigits: 0 }).format(n || 0);
+}
+
+function renderStats(s) {
+  const items = [
+    { label: 'Пользователей', value: s.totalUsers ?? 0, highlight: false },
+    { label: 'QR ожидают', value: s.qrPending ?? 0, highlight: (s.qrPending || 0) > 0, pulse: true },
+    { label: 'QR оплачено', value: s.qrPaid ?? 0, highlight: false },
+    { label: 'Выводы ожидают', value: s.wdPending ?? 0, highlight: (s.wdPending || 0) > 0 },
+    { label: 'Текущий курс', value: (s.currentRate ?? '—') + ' \u20bd/USDT', highlight: false },
+    { label: 'Оборот QR', value: formatRub(s.qrTotalRub), highlight: false },
+  ];
+  const grid = document.getElementById('statsGrid');
+  grid.innerHTML = items.map(i => `
+    <div class="stat-card${i.highlight ? ' highlight' : ''}">
+      <div class="stat-label">${i.label}${i.highlight && i.pulse ? '<span class="pulse-badge"></span>' : ''}</div>
+      <div class="stat-value">${i.value}</div>
+    </div>
+  `).join('');
+  return s;
+}
+
+function renderNav(s) {
+  const links = [
+    { icon: '\ud83d\udcf1', label: 'QR \u041e\u0447\u0435\u0440\u0435\u0434\u044c', href: 'admin-qr.html', badge: s.qrPending || 0 },
+    { icon: '\ud83d\udc65', label: '\u041f\u043e\u043b\u044c\u0437\u043e\u0432\u0430\u0442\u0435\u043b\u0438', href: 'admin-users.html', badge: 0 },
+    { icon: '\ud83d\udcb8', label: '\u0412\u044b\u0432\u043e\u0434\u044b', href: 'admin-withdrawals.html', badge: s.wdPending || 0 },
+    { icon: '\u2699\ufe0f', label: '\u041d\u0430\u0441\u0442\u0440\u043e\u0439\u043a\u0438', href: 'admin-settings.html', badge: 0 },
+  ];
+  const grid = document.getElementById('navGrid');
+  grid.innerHTML = links.map(l => `
+    <a class="nav-card" href="${l.href}">
+      <span class="nav-icon">${l.icon}</span>
+      <span class="nav-label">${l.label}</span>
+      ${l.badge > 0 ? `<span class="nav-badge">${l.badge}</span>` : ''}
+    </a>
+  `).join('');
+}
+
+function loadStats() {
+  document.getElementById('errorMsg').textContent = '';
+  apiFetch('/api/admin/stats')
+    .then(r => {
+      const s = r.stats || r;
+      renderStats(s);
+      renderNav(s);
+    })
+    .catch(e => {
+      document.getElementById('errorMsg').textContent = 'Ошибка загрузки: ' + e.message;
+    });
+}
+
+function init() {
+  const token = getToken();
+  if (!token) {
+    document.getElementById('loginBox').classList.remove('hidden');
+    document.getElementById('dashboard').classList.add('hidden');
+    return;
+  }
+  document.getElementById('loginBox').classList.add('hidden');
+  document.getElementById('dashboard').classList.remove('hidden');
+  loadStats();
+  if (refreshTimer) clearInterval(refreshTimer);
+  refreshTimer = setInterval(loadStats, 10000);
+}
+
+// Enter key in token input
+document.getElementById('tokenInput').addEventListener('keydown', e => {
+  if (e.key === 'Enter') saveToken();
+});
+
+init();
+</script>
+</body>
+</html>

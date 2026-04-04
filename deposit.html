@@ -1,0 +1,399 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<title>Пополнение USDT</title>
+<style>
+:root {
+  --bg: #0a1628;
+  --card: #0f1d35;
+  --card2: #132444;
+  --border: #1c2f52;
+  --text: #faf5ef;
+  --muted: #b8a99a;
+  --accent: #e8d5b7;
+  --accent2: #d4b896;
+  --ok: #7dd3a8;
+  --bad: #e88b8b;
+  --warn: #e8c86b;
+  --shadow: 0 12px 30px rgba(0,0,0,.4);
+}
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+body {
+  font-family: system-ui, -apple-system, sans-serif;
+  background: var(--bg);
+  color: var(--text);
+  min-height: 100vh;
+  display: flex;
+  justify-content: center;
+  padding: 16px;
+}
+.container {
+  width: 100%;
+  max-width: 480px;
+}
+.header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 20px;
+  padding: 8px 0;
+}
+.back-btn {
+  background: var(--card2);
+  border: 1px solid var(--border);
+  color: var(--accent);
+  width: 40px;
+  height: 40px;
+  border-radius: 12px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  font-size: 20px;
+  text-decoration: none;
+  flex-shrink: 0;
+  transition: background .2s;
+}
+.back-btn:hover { background: var(--card); }
+.header h1 {
+  font-size: 22px;
+  font-weight: 700;
+  color: var(--text);
+}
+.card {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 20px;
+  padding: 20px;
+  margin-bottom: 16px;
+  box-shadow: var(--shadow);
+}
+.balance-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+.balance-label {
+  color: var(--muted);
+  font-size: 14px;
+}
+.balance-value {
+  font-size: 24px;
+  font-weight: 700;
+  color: var(--accent);
+}
+.balance-currency {
+  font-size: 14px;
+  color: var(--muted);
+  margin-left: 4px;
+}
+.section-title {
+  font-size: 14px;
+  color: var(--muted);
+  margin-bottom: 10px;
+  text-transform: uppercase;
+  letter-spacing: .5px;
+}
+.network-badge {
+  display: inline-block;
+  background: var(--card2);
+  border: 1px solid var(--border);
+  color: var(--accent);
+  font-size: 13px;
+  font-weight: 600;
+  padding: 4px 12px;
+  border-radius: 8px;
+  margin-bottom: 14px;
+}
+.wallet-address-wrap {
+  background: var(--card2);
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  padding: 16px;
+  cursor: pointer;
+  transition: border-color .2s;
+  position: relative;
+  word-break: break-all;
+}
+.wallet-address-wrap:hover { border-color: var(--accent2); }
+.wallet-address {
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--text);
+  line-height: 1.5;
+}
+.copy-hint {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 10px;
+  font-size: 12px;
+  color: var(--muted);
+}
+.copy-icon {
+  width: 14px;
+  height: 14px;
+}
+.instructions {
+  font-size: 13px;
+  color: var(--muted);
+  line-height: 1.6;
+  margin-top: 14px;
+}
+.history-item {
+  background: var(--card2);
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  padding: 14px 16px;
+  margin-bottom: 10px;
+}
+.history-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+.history-amount {
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--ok);
+}
+.history-date {
+  font-size: 12px;
+  color: var(--muted);
+}
+.history-hash {
+  font-size: 12px;
+  color: var(--accent2);
+  margin-top: 6px;
+  word-break: break-all;
+}
+.history-hash a {
+  color: var(--accent2);
+  text-decoration: underline;
+  text-decoration-style: dotted;
+}
+.history-hash a:hover { color: var(--accent); }
+.empty-state {
+  text-align: center;
+  color: var(--muted);
+  font-size: 14px;
+  padding: 20px 0;
+}
+.toast {
+  position: fixed;
+  bottom: 30px;
+  left: 50%;
+  transform: translateX(-50%) translateY(80px);
+  background: var(--ok);
+  color: var(--bg);
+  padding: 10px 24px;
+  border-radius: 12px;
+  font-size: 14px;
+  font-weight: 600;
+  opacity: 0;
+  transition: all .3s ease;
+  z-index: 999;
+  pointer-events: none;
+}
+.toast.show {
+  opacity: 1;
+  transform: translateX(-50%) translateY(0);
+}
+.skeleton {
+  background: linear-gradient(90deg, var(--card2) 25%, var(--border) 50%, var(--card2) 75%);
+  background-size: 200% 100%;
+  animation: shimmer 1.5s infinite;
+  border-radius: 8px;
+}
+@keyframes shimmer {
+  0% { background-position: 200% 0; }
+  100% { background-position: -200% 0; }
+}
+.skeleton-line {
+  height: 18px;
+  margin-bottom: 8px;
+  border-radius: 8px;
+}
+.skeleton-line.short { width: 60%; }
+.error-msg {
+  background: rgba(232,139,139,.1);
+  border: 1px solid var(--bad);
+  border-radius: 12px;
+  padding: 12px 16px;
+  color: var(--bad);
+  font-size: 13px;
+  text-align: center;
+  margin-bottom: 16px;
+}
+</style>
+</head>
+<body>
+<div class="container">
+  <div class="header">
+    <a href="index.html" class="back-btn">&larr;</a>
+    <h1>Пополнение USDT</h1>
+  </div>
+
+  <div id="errorBox" style="display:none" class="error-msg"></div>
+
+  <!-- Balance -->
+  <div class="card">
+    <div class="balance-row">
+      <span class="balance-label">Ваш баланс</span>
+      <div>
+        <span class="balance-value" id="balanceValue">--</span>
+        <span class="balance-currency">USDT</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- Deposit Info -->
+  <div class="card" id="depositCard">
+    <div class="section-title">Адрес для пополнения</div>
+    <div id="networkBadge" class="network-badge" style="display:none"></div>
+    <div id="walletWrap" class="wallet-address-wrap" onclick="copyAddress()" style="display:none">
+      <div class="wallet-address" id="walletAddr"></div>
+      <div class="copy-hint">
+        <svg class="copy-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/>
+        </svg>
+        Нажмите, чтобы скопировать
+      </div>
+    </div>
+    <div id="depositSkeleton">
+      <div class="skeleton skeleton-line short"></div>
+      <div class="skeleton skeleton-line" style="height:48px"></div>
+    </div>
+    <div class="instructions">
+      Отправьте USDT на адрес выше. После отправки ваш баланс будет пополнен администратором.
+    </div>
+  </div>
+
+  <!-- History -->
+  <div class="card">
+    <div class="section-title">Последние пополнения</div>
+    <div id="historyList">
+      <div id="historySkeleton">
+        <div class="skeleton skeleton-line"></div>
+        <div class="skeleton skeleton-line short"></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="toast" id="toast">Скопировано!</div>
+
+<script>
+const TOKEN = localStorage.getItem('auth_token') || '';
+const BASE = localStorage.getItem('worker_base') || 'https://client-qr-pay.YOUR.workers.dev';
+
+function headers() {
+  return { 'Authorization': 'Bearer ' + TOKEN, 'Content-Type': 'application/json' };
+}
+
+function showError(msg) {
+  const box = document.getElementById('errorBox');
+  box.textContent = msg;
+  box.style.display = 'block';
+}
+
+function formatDate(d) {
+  if (!d) return '';
+  const dt = new Date(d);
+  return dt.toLocaleDateString('ru-RU', { day: '2-digit', month: '2-digit', year: 'numeric' }) +
+    ' ' + dt.toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' });
+}
+
+function truncate(str, len) {
+  if (!str) return '';
+  if (str.length <= len) return str;
+  return str.slice(0, len / 2) + '...' + str.slice(-len / 2);
+}
+
+let depositWallet = '';
+
+function copyAddress() {
+  if (!depositWallet) return;
+  navigator.clipboard.writeText(depositWallet).then(() => {
+    const t = document.getElementById('toast');
+    t.classList.add('show');
+    setTimeout(() => t.classList.remove('show'), 2000);
+  }).catch(() => {});
+}
+
+async function loadBalance() {
+  try {
+    const r = await fetch(BASE + '/api/me', { headers: headers() });
+    if (!r.ok) throw new Error('Ошибка загрузки');
+    const data = await r.json();
+    const bal = data.user ? data.user.balance : (data.balance || 0);
+    document.getElementById('balanceValue').textContent = parseFloat(bal).toFixed(2);
+  } catch (e) {
+    document.getElementById('balanceValue').textContent = '0.00';
+  }
+}
+
+async function loadDepositInfo() {
+  try {
+    const r = await fetch(BASE + '/api/deposit/info', { headers: headers() });
+    if (!r.ok) throw new Error('Ошибка');
+    const data = await r.json();
+    depositWallet = data.wallet || '';
+    const network = data.network || 'TRC20';
+
+    document.getElementById('depositSkeleton').style.display = 'none';
+    document.getElementById('walletAddr').textContent = depositWallet;
+    document.getElementById('walletWrap').style.display = 'block';
+    const badge = document.getElementById('networkBadge');
+    badge.textContent = network;
+    badge.style.display = 'inline-block';
+  } catch (e) {
+    document.getElementById('depositSkeleton').style.display = 'none';
+    showError('Не удалось загрузить адрес для пополнения');
+  }
+}
+
+async function loadHistory() {
+  const list = document.getElementById('historyList');
+  try {
+    const r = await fetch(BASE + '/api/deposit/history', { headers: headers() });
+    if (!r.ok) throw new Error('Ошибка');
+    const data = await r.json();
+    const items = (data.items || []).slice(0, 5);
+
+    if (items.length === 0) {
+      list.innerHTML = '<div class="empty-state">Нет пополнений</div>';
+      return;
+    }
+
+    list.innerHTML = items.map(item => {
+      const hash = item.txHash || '';
+      let hashHtml = '';
+      if (hash) {
+        if (hash.startsWith('http')) {
+          hashHtml = '<div class="history-hash"><a href="' + hash + '" target="_blank" rel="noopener">' + truncate(hash, 40) + '</a></div>';
+        } else {
+          hashHtml = '<div class="history-hash">' + truncate(hash, 30) + '</div>';
+        }
+      }
+      return '<div class="history-item">' +
+        '<div class="history-row">' +
+          '<span class="history-amount">+' + parseFloat(item.amount || item.amountUsdt || 0).toFixed(2) + ' USDT</span>' +
+          '<span class="history-date">' + formatDate(item.date || item.createdAt) + '</span>' +
+        '</div>' +
+        hashHtml +
+      '</div>';
+    }).join('');
+  } catch (e) {
+    list.innerHTML = '<div class="empty-state">Не удалось загрузить историю</div>';
+  }
+}
+
+loadBalance();
+loadDepositInfo();
+loadHistory();
+</script>
+</body>
+</html>

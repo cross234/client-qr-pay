@@ -1,0 +1,433 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>QR Очередь</title>
+<style>
+:root {
+  --bg: #0a1628;
+  --card: #0f1d35;
+  --card2: #132444;
+  --border: #1c2f52;
+  --text: #faf5ef;
+  --muted: #b8a99a;
+  --accent: #e8d5b7;
+  --accent2: #d4b896;
+  --ok: #7dd3a8;
+  --bad: #e88b8b;
+  --warn: #e8c86b;
+  --shadow: 0 12px 30px rgba(0,0,0,.4);
+}
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+body {
+  font-family: system-ui, -apple-system, sans-serif;
+  background: var(--bg);
+  color: var(--text);
+  min-height: 100vh;
+  padding: 20px;
+}
+.container { max-width: 900px; margin: 0 auto; }
+
+/* Header */
+.header { display: flex; align-items: center; gap: 16px; margin-bottom: 24px; flex-wrap: wrap; }
+.back-link {
+  color: var(--muted);
+  text-decoration: none;
+  font-size: .9rem;
+  padding: 8px 14px;
+  border-radius: 10px;
+  border: 1px solid var(--border);
+  transition: all .2s;
+}
+.back-link:hover { border-color: var(--accent); color: var(--accent); }
+h1 { font-size: 1.5rem; color: var(--accent); flex: 1; }
+.pending-badge {
+  background: var(--warn);
+  color: var(--bg);
+  font-weight: 700;
+  font-size: .85rem;
+  padding: 5px 14px;
+  border-radius: 20px;
+}
+
+/* Filter tabs */
+.tabs {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 22px;
+  flex-wrap: wrap;
+}
+.tab {
+  padding: 10px 20px;
+  border-radius: 12px;
+  border: 1px solid var(--border);
+  background: var(--card);
+  color: var(--muted);
+  cursor: pointer;
+  font-size: .9rem;
+  font-weight: 600;
+  transition: all .2s;
+}
+.tab:hover { border-color: var(--accent); color: var(--text); }
+.tab.active { background: var(--accent); color: var(--bg); border-color: var(--accent); }
+
+/* QR Cards */
+.qr-list { display: flex; flex-direction: column; gap: 18px; }
+.qr-card {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 18px;
+  padding: 22px;
+  box-shadow: var(--shadow);
+}
+.qr-card-header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 14px; flex-wrap: wrap; gap: 10px; }
+.qr-user { display: flex; flex-direction: column; gap: 4px; }
+.qr-username { font-weight: 700; font-size: 1.05rem; color: var(--accent); }
+.qr-tgid { font-size: .8rem; color: var(--muted); }
+.qr-status-badge {
+  padding: 4px 12px;
+  border-radius: 20px;
+  font-size: .75rem;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+.status-PENDING { background: rgba(232,200,107,.15); color: var(--warn); }
+.status-PAID { background: rgba(125,211,168,.15); color: var(--ok); }
+.status-REJECTED { background: rgba(232,139,139,.15); color: var(--bad); }
+
+.qr-amounts {
+  display: flex;
+  gap: 20px;
+  align-items: baseline;
+  margin-bottom: 12px;
+  flex-wrap: wrap;
+}
+.qr-rub { font-size: 2rem; font-weight: 800; color: var(--text); }
+.qr-usdt { font-size: 1rem; color: var(--ok); font-weight: 600; }
+.qr-rate { font-size: .85rem; color: var(--muted); }
+
+.qr-meta { display: flex; gap: 16px; flex-wrap: wrap; margin-bottom: 14px; font-size: .85rem; color: var(--muted); }
+.qr-note {
+  background: var(--card2);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 10px 14px;
+  margin-bottom: 14px;
+  font-size: .9rem;
+  color: var(--accent2);
+}
+
+/* QR Image area */
+.qr-image-area { margin-bottom: 16px; }
+.btn {
+  padding: 12px 22px;
+  border-radius: 12px;
+  border: none;
+  font-size: .9rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all .2s;
+}
+.btn-show-qr {
+  background: var(--card2);
+  color: var(--accent);
+  border: 1px solid var(--border);
+}
+.btn-show-qr:hover { border-color: var(--accent); }
+.qr-img-container {
+  margin-top: 12px;
+  text-align: center;
+}
+.qr-img-container img {
+  max-width: 100%;
+  width: 400px;
+  border-radius: 14px;
+  border: 2px solid var(--border);
+  cursor: pointer;
+  transition: transform .2s;
+}
+.qr-img-container img:hover { transform: scale(1.02); }
+.qr-img-hint { font-size: .8rem; color: var(--muted); margin-top: 6px; }
+
+/* Action buttons */
+.qr-actions { display: flex; gap: 12px; flex-wrap: wrap; }
+.btn-paid {
+  background: var(--ok);
+  color: var(--bg);
+  flex: 1;
+  min-width: 140px;
+}
+.btn-paid:hover { background: #6bc498; }
+.btn-reject {
+  background: var(--bad);
+  color: var(--bg);
+  flex: 1;
+  min-width: 140px;
+}
+.btn-reject:hover { background: #d57a7a; }
+
+/* Lightbox */
+.lightbox {
+  display: none;
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,.85);
+  z-index: 1000;
+  justify-content: center;
+  align-items: center;
+  padding: 20px;
+  cursor: pointer;
+}
+.lightbox.open { display: flex; }
+.lightbox img {
+  max-width: 95vw;
+  max-height: 90vh;
+  border-radius: 16px;
+  box-shadow: 0 0 60px rgba(0,0,0,.6);
+}
+
+/* Loading / empty */
+.loading { text-align: center; padding: 40px; color: var(--muted); }
+.empty-state { text-align: center; padding: 60px 20px; color: var(--muted); font-size: 1.1rem; }
+.error-msg { color: var(--bad); text-align: center; padding: 16px; }
+.refresh-note { color: var(--muted); font-size: .8rem; text-align: center; margin-top: 20px; }
+.hidden { display: none !important; }
+</style>
+</head>
+<body>
+<div class="container">
+  <div class="header">
+    <a class="back-link" href="admin.html">&larr; Назад</a>
+    <h1>QR Очередь</h1>
+    <span class="pending-badge" id="pendingBadge">0</span>
+  </div>
+
+  <div class="tabs" id="tabs">
+    <button class="tab active" data-status="PENDING">Ожидают</button>
+    <button class="tab" data-status="PAID">Оплачено</button>
+    <button class="tab" data-status="REJECTED">Отклонено</button>
+    <button class="tab" data-status="">Все</button>
+  </div>
+
+  <div class="qr-list" id="qrList">
+    <div class="loading">Загрузка...</div>
+  </div>
+
+  <div class="refresh-note">Обновление каждые 10 сек</div>
+  <div class="error-msg hidden" id="errorMsg"></div>
+</div>
+
+<!-- Lightbox -->
+<div class="lightbox" id="lightbox" onclick="closeLightbox()">
+  <img id="lightboxImg" src="" alt="QR">
+</div>
+
+<script>
+const WORKER_BASE = localStorage.getItem('worker_base') || 'https://client-qr-pay.YOUR.workers.dev';
+const TOKEN = localStorage.getItem('admin_token') || '';
+
+let currentStatus = 'PENDING';
+let refreshTimer = null;
+let lastPendingIds = [];
+let beepReady = false;
+
+// Beep sound via AudioContext
+function playBeep() {
+  try {
+    const ctx = new (window.AudioContext || window.webkitAudioContext)();
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc.connect(gain);
+    gain.connect(ctx.destination);
+    osc.type = 'sine';
+    osc.frequency.value = 880;
+    gain.gain.value = 0.3;
+    osc.start();
+    gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.3);
+    osc.stop(ctx.currentTime + 0.3);
+  } catch (e) {}
+}
+
+function apiFetch(path, opts) {
+  return fetch(WORKER_BASE + path, {
+    ...opts,
+    headers: {
+      'X-Admin-Token': TOKEN,
+      'Content-Type': 'application/json',
+      ...(opts?.headers || {})
+    }
+  }).then(r => {
+    if (!r.ok) throw new Error('HTTP ' + r.status);
+    return r.json();
+  });
+}
+
+function formatDate(d) {
+  if (!d) return '—';
+  const dt = new Date(d);
+  return dt.toLocaleString('ru-RU', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' });
+}
+
+function formatRub(n) {
+  return new Intl.NumberFormat('ru-RU').format(n || 0) + ' \u20bd';
+}
+
+// Tabs
+document.getElementById('tabs').addEventListener('click', e => {
+  const tab = e.target.closest('.tab');
+  if (!tab) return;
+  document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+  tab.classList.add('active');
+  currentStatus = tab.dataset.status;
+  loadQR();
+});
+
+function renderCard(item) {
+  const s = item.status || 'PENDING';
+  const isPending = s === 'PENDING';
+  return `
+    <div class="qr-card" data-id="${item.id}">
+      <div class="qr-card-header">
+        <div class="qr-user">
+          <span class="qr-username">@${item.username || 'unknown'}</span>
+          <span class="qr-tgid">TG: ${item.tgId || '—'}</span>
+        </div>
+        <span class="qr-status-badge status-${s}">${s}</span>
+      </div>
+      <div class="qr-amounts">
+        <span class="qr-rub">${formatRub(item.amountRub)}</span>
+        <span class="qr-usdt">${(item.amountUsdt || 0)} USDT</span>
+        <span class="qr-rate">@ ${item.rate || '—'}</span>
+      </div>
+      <div class="qr-meta">
+        <span>Создан: ${formatDate(item.createdAt || item.created_at)}</span>
+      </div>
+      ${item.note ? `<div class="qr-note">${escapeHtml(item.note)}</div>` : ''}
+      ${item.reason ? `<div class="qr-note" style="border-color:var(--bad);color:var(--bad)">Причина: ${escapeHtml(item.reason)}</div>` : ''}
+      <div class="qr-image-area" id="imgArea-${item.id}">
+        <button class="btn btn-show-qr" onclick="loadQRImage('${item.id}')">Показать QR</button>
+      </div>
+      ${isPending ? `
+      <div class="qr-actions">
+        <button class="btn btn-paid" onclick="markPaid('${item.id}')">&#10004; Оплачено</button>
+        <button class="btn btn-reject" onclick="markReject('${item.id}')">&#10006; Отклонить</button>
+      </div>
+      ` : ''}
+    </div>
+  `;
+}
+
+function escapeHtml(s) {
+  const d = document.createElement('div');
+  d.textContent = s;
+  return d.innerHTML;
+}
+
+function loadQR() {
+  const list = document.getElementById('qrList');
+  const errEl = document.getElementById('errorMsg');
+  errEl.classList.add('hidden');
+
+  const qs = currentStatus ? `?status=${currentStatus}` : '';
+  apiFetch('/api/admin/qr' + qs)
+    .then(r => {
+      const items = r.items || r || [];
+      if (items.length === 0) {
+        list.innerHTML = '<div class="empty-state">Нет записей</div>';
+      } else {
+        list.innerHTML = items.map(renderCard).join('');
+      }
+
+      // Pending count badge
+      const pendingItems = currentStatus === 'PENDING' ? items : [];
+      if (currentStatus === 'PENDING') {
+        document.getElementById('pendingBadge').textContent = items.length;
+      }
+      // Also fetch pending count if not on pending tab
+      if (currentStatus !== 'PENDING') {
+        apiFetch('/api/admin/qr?status=PENDING').then(pr => {
+          const pi = pr.items || pr || [];
+          document.getElementById('pendingBadge').textContent = pi.length;
+          checkNewPending(pi);
+        }).catch(() => {});
+      } else {
+        checkNewPending(items);
+      }
+    })
+    .catch(e => {
+      errEl.textContent = 'Ошибка: ' + e.message;
+      errEl.classList.remove('hidden');
+    });
+}
+
+function checkNewPending(items) {
+  const ids = items.map(i => i.id);
+  if (beepReady && lastPendingIds.length > 0) {
+    const newOnes = ids.filter(id => !lastPendingIds.includes(id));
+    if (newOnes.length > 0) {
+      playBeep();
+    }
+  }
+  lastPendingIds = ids;
+  beepReady = true;
+}
+
+function loadQRImage(id) {
+  const area = document.getElementById('imgArea-' + id);
+  area.innerHTML = '<div style="color:var(--muted);padding:8px">Загрузка QR...</div>';
+
+  apiFetch('/api/admin/qr/' + id + '/image')
+    .then(r => {
+      const img = r.image || r.data || '';
+      area.innerHTML = `
+        <div class="qr-img-container">
+          <img src="data:image/jpeg;base64,${img}" alt="QR Code" onclick="openLightbox(this.src)">
+          <div class="qr-img-hint">Нажмите для увеличения. Отсканируйте камерой банковского приложения.</div>
+        </div>
+      `;
+    })
+    .catch(e => {
+      area.innerHTML = `<div style="color:var(--bad);padding:8px">Ошибка загрузки QR: ${e.message}</div>`;
+    });
+}
+
+function openLightbox(src) {
+  document.getElementById('lightboxImg').src = src;
+  document.getElementById('lightbox').classList.add('open');
+}
+function closeLightbox() {
+  document.getElementById('lightbox').classList.remove('open');
+}
+document.addEventListener('keydown', e => {
+  if (e.key === 'Escape') closeLightbox();
+});
+
+function markPaid(id) {
+  if (!confirm('Подтвердить оплату?')) return;
+  apiFetch('/api/admin/qr/' + id + '/paid', { method: 'POST' })
+    .then(() => loadQR())
+    .catch(e => alert('Ошибка: ' + e.message));
+}
+
+function markReject(id) {
+  const reason = prompt('Причина отклонения:');
+  if (reason === null) return;
+  apiFetch('/api/admin/qr/' + id + '/reject', {
+    method: 'POST',
+    body: JSON.stringify({ reason: reason || '' })
+  })
+    .then(() => loadQR())
+    .catch(e => alert('Ошибка: ' + e.message));
+}
+
+// Init
+if (!TOKEN) {
+  document.getElementById('qrList').innerHTML = '<div class="empty-state">Токен не задан. <a href="admin.html" style="color:var(--accent)">Войти</a></div>';
+} else {
+  loadQR();
+  refreshTimer = setInterval(loadQR, 10000);
+}
+</script>
+</body>
+</html>

@@ -1,0 +1,417 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>История</title>
+<style>
+:root {
+  --bg: #0a1628;
+  --card: #0f1d35;
+  --card2: #132444;
+  --border: #1c2f52;
+  --text: #faf5ef;
+  --muted: #b8a99a;
+  --accent: #e8d5b7;
+  --accent2: #d4b896;
+  --ok: #7dd3a8;
+  --bad: #e88b8b;
+  --warn: #e8c86b;
+  --shadow: 0 12px 30px rgba(0,0,0,.4);
+}
+
+* { margin: 0; padding: 0; box-sizing: border-box; }
+
+body {
+  font-family: system-ui, -apple-system, sans-serif;
+  background: var(--bg);
+  color: var(--text);
+  min-height: 100vh;
+  display: flex;
+  justify-content: center;
+}
+
+.container {
+  width: 100%;
+  max-width: 480px;
+  padding: 16px;
+  padding-bottom: 40px;
+}
+
+.header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 20px;
+}
+
+.back-btn {
+  width: 40px;
+  height: 40px;
+  border-radius: 12px;
+  background: var(--card);
+  border: 1px solid var(--border);
+  color: var(--accent);
+  font-size: 20px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  text-decoration: none;
+  flex-shrink: 0;
+}
+
+.header h1 {
+  font-size: 22px;
+  font-weight: 700;
+  color: var(--accent);
+}
+
+/* Tabs */
+.tabs {
+  display: flex;
+  gap: 4px;
+  background: var(--card);
+  border-radius: 16px;
+  padding: 4px;
+  margin-bottom: 20px;
+  border: 1px solid var(--border);
+}
+
+.tab {
+  flex: 1;
+  padding: 10px 6px;
+  border-radius: 12px;
+  border: none;
+  background: transparent;
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 600;
+  font-family: inherit;
+  cursor: pointer;
+  transition: all .2s;
+  text-align: center;
+}
+
+.tab.active {
+  background: var(--card2);
+  color: var(--accent);
+  box-shadow: 0 2px 8px rgba(0,0,0,.3);
+}
+
+/* List */
+.tab-content { display: none; }
+.tab-content.active { display: block; }
+
+.item-card {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  padding: 16px 18px;
+  margin-bottom: 10px;
+  box-shadow: var(--shadow);
+}
+
+.item-top {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 8px;
+}
+
+.item-amount {
+  font-size: 18px;
+  font-weight: 700;
+}
+
+.item-amount-sub {
+  font-size: 13px;
+  color: var(--muted);
+  font-weight: 400;
+}
+
+.badge {
+  font-size: 12px;
+  font-weight: 600;
+  padding: 4px 10px;
+  border-radius: 8px;
+}
+
+.badge-pending {
+  background: rgba(232,200,107,.12);
+  color: var(--warn);
+}
+
+.badge-paid, .badge-ok {
+  background: rgba(125,211,168,.12);
+  color: var(--ok);
+}
+
+.badge-rejected {
+  background: rgba(232,139,139,.12);
+  color: var(--bad);
+}
+
+.item-details {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.item-detail {
+  font-size: 13px;
+  color: var(--muted);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.item-detail strong {
+  color: var(--text);
+  font-weight: 500;
+}
+
+.item-note {
+  font-size: 13px;
+  color: var(--muted);
+  margin-top: 6px;
+  font-style: italic;
+}
+
+.mono {
+  font-family: ui-monospace, 'SF Mono', monospace;
+  font-size: 12px;
+}
+
+/* Empty + Loading */
+.empty-state {
+  text-align: center;
+  padding: 48px 16px;
+  color: var(--muted);
+  font-size: 15px;
+}
+
+.empty-icon {
+  font-size: 40px;
+  margin-bottom: 12px;
+  opacity: .6;
+}
+
+.loading-state {
+  text-align: center;
+  padding: 48px 16px;
+}
+
+.loader {
+  width: 32px;
+  height: 32px;
+  border: 3px solid var(--border);
+  border-top-color: var(--accent);
+  border-radius: 50%;
+  animation: spin .7s linear infinite;
+  margin: 0 auto 12px;
+}
+
+@keyframes spin { to { transform: rotate(360deg); } }
+
+.loading-text {
+  color: var(--muted);
+  font-size: 14px;
+}
+
+.error-state {
+  text-align: center;
+  padding: 32px 16px;
+  color: var(--bad);
+  font-size: 14px;
+}
+</style>
+</head>
+<body>
+
+<div class="container">
+  <div class="header">
+    <a href="index.html" class="back-btn">&larr;</a>
+    <h1>История</h1>
+  </div>
+
+  <div class="tabs">
+    <button class="tab active" data-tab="qr">QR Оплаты</button>
+    <button class="tab" data-tab="withdraw">Выводы</button>
+    <button class="tab" data-tab="deposit">Пополнения</button>
+  </div>
+
+  <div class="tab-content active" id="tab-qr">
+    <div class="loading-state" id="qr-loading"><div class="loader"></div><div class="loading-text">Загрузка...</div></div>
+    <div id="qr-list"></div>
+  </div>
+
+  <div class="tab-content" id="tab-withdraw">
+    <div class="loading-state" id="withdraw-loading"><div class="loader"></div><div class="loading-text">Загрузка...</div></div>
+    <div id="withdraw-list"></div>
+  </div>
+
+  <div class="tab-content" id="tab-deposit">
+    <div class="loading-state" id="deposit-loading"><div class="loader"></div><div class="loading-text">Загрузка...</div></div>
+    <div id="deposit-list"></div>
+  </div>
+</div>
+
+<script>
+const TOKEN = localStorage.getItem('auth_token') || '';
+const BASE = localStorage.getItem('worker_base') || 'https://client-qr-pay.YOUR.workers.dev';
+const headers = { 'Authorization': 'Bearer ' + TOKEN };
+
+const $ = id => document.getElementById(id);
+
+// --- Status helpers ---
+const statusMap = {
+  'PENDING': { text: 'На проверке', cls: 'badge-pending' },
+  'PAID':    { text: 'Оплачено',   cls: 'badge-paid' },
+  'APPROVED':{ text: 'Оплачено',   cls: 'badge-paid' },
+  'REJECTED':{ text: 'Отклонено',  cls: 'badge-rejected' },
+  'COMPLETED':{ text: 'Завершено', cls: 'badge-ok' },
+};
+
+function badge(status) {
+  const s = statusMap[(status || '').toUpperCase()] || { text: status, cls: 'badge-pending' };
+  return '<span class="badge ' + s.cls + '">' + s.text + '</span>';
+}
+
+function fmtDate(d) {
+  if (!d) return '';
+  const dt = new Date(d);
+  const dd = String(dt.getDate()).padStart(2, '0');
+  const mm = String(dt.getMonth() + 1).padStart(2, '0');
+  const hh = String(dt.getHours()).padStart(2, '0');
+  const mi = String(dt.getMinutes()).padStart(2, '0');
+  return dd + '.' + mm + '.' + dt.getFullYear() + ' ' + hh + ':' + mi;
+}
+
+function truncAddr(a) {
+  if (!a || a.length < 16) return a || '';
+  return a.slice(0, 8) + '...' + a.slice(-6);
+}
+
+function emptyHtml(text) {
+  return '<div class="empty-state"><div class="empty-icon">📭</div>' + (text || 'Пока ничего нет') + '</div>';
+}
+
+// --- Tabs ---
+document.querySelectorAll('.tab').forEach(tab => {
+  tab.addEventListener('click', function() {
+    document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+    document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
+    this.classList.add('active');
+    $('tab-' + this.dataset.tab).classList.add('active');
+  });
+});
+
+// --- Load QR History ---
+async function loadQR() {
+  try {
+    const res = await fetch(BASE + '/api/qr/history', { headers });
+    if (!res.ok) throw new Error('Ошибка');
+    const data = await res.json();
+    const items = (data.items || data || []).sort((a, b) => new Date(b.createdAt || b.date) - new Date(a.createdAt || a.date));
+    $('qr-loading').style.display = 'none';
+
+    if (!items.length) { $('qr-list').innerHTML = emptyHtml(); return; }
+
+    $('qr-list').innerHTML = items.map(i => {
+      const date = i.createdAt || i.date || i.created_at;
+      return '<div class="item-card">' +
+        '<div class="item-top">' +
+          '<div class="item-amount">' + Number(i.amountRub || i.amount_rub || 0).toLocaleString('ru-RU') + ' ₽ ' +
+            '<span class="item-amount-sub">' + Number(i.amountUsdt || i.amount_usdt || 0).toFixed(2) + ' USDT</span>' +
+          '</div>' +
+          badge(i.status) +
+        '</div>' +
+        '<div class="item-details">' +
+          '<div class="item-detail">📅 ' + fmtDate(date) + '</div>' +
+        '</div>' +
+        (i.note ? '<div class="item-note">💬 ' + escHtml(i.note) + '</div>' : '') +
+      '</div>';
+    }).join('');
+  } catch (e) {
+    $('qr-loading').style.display = 'none';
+    $('qr-list').innerHTML = '<div class="error-state">Не удалось загрузить историю</div>';
+  }
+}
+
+// --- Load Withdrawals ---
+async function loadWithdrawals() {
+  try {
+    const res = await fetch(BASE + '/api/withdraw/history', { headers });
+    if (!res.ok) throw new Error('Ошибка');
+    const data = await res.json();
+    const items = (data.items || data || []).sort((a, b) => new Date(b.createdAt || b.date) - new Date(a.createdAt || a.date));
+    $('withdraw-loading').style.display = 'none';
+
+    if (!items.length) { $('withdraw-list').innerHTML = emptyHtml(); return; }
+
+    $('withdraw-list').innerHTML = items.map(i => {
+      const date = i.createdAt || i.date || i.created_at;
+      const addr = i.address || i.wallet || '';
+      const txHash = i.txHash || i.tx_hash || '';
+      return '<div class="item-card">' +
+        '<div class="item-top">' +
+          '<div class="item-amount">' + Number(i.amountUsdt || i.amount_usdt || i.amount || 0).toFixed(2) + ' USDT</div>' +
+          badge(i.status) +
+        '</div>' +
+        '<div class="item-details">' +
+          '<div class="item-detail">📍 <span class="mono">' + escHtml(truncAddr(addr)) + '</span></div>' +
+          '<div class="item-detail">📅 ' + fmtDate(date) + '</div>' +
+          (txHash ? '<div class="item-detail">🔗 <span class="mono">' + escHtml(truncAddr(txHash)) + '</span></div>' : '') +
+        '</div>' +
+      '</div>';
+    }).join('');
+  } catch (e) {
+    $('withdraw-loading').style.display = 'none';
+    $('withdraw-list').innerHTML = '<div class="error-state">Не удалось загрузить историю</div>';
+  }
+}
+
+// --- Load Deposits ---
+async function loadDeposits() {
+  try {
+    const res = await fetch(BASE + '/api/deposit/history', { headers });
+    if (!res.ok) throw new Error('Ошибка');
+    const data = await res.json();
+    const items = (data.items || data || []).sort((a, b) => new Date(b.createdAt || b.date) - new Date(a.createdAt || a.date));
+    $('deposit-loading').style.display = 'none';
+
+    if (!items.length) { $('deposit-list').innerHTML = emptyHtml(); return; }
+
+    $('deposit-list').innerHTML = items.map(i => {
+      const date = i.createdAt || i.date || i.created_at;
+      const txHash = i.txHash || i.tx_hash || '';
+      return '<div class="item-card">' +
+        '<div class="item-top">' +
+          '<div class="item-amount" style="color:var(--ok)">+' + Number(i.amountUsdt || i.amount_usdt || i.amount || 0).toFixed(2) + ' USDT</div>' +
+        '</div>' +
+        '<div class="item-details">' +
+          (txHash ? '<div class="item-detail">🔗 <span class="mono">' + escHtml(truncAddr(txHash)) + '</span></div>' : '') +
+          '<div class="item-detail">📅 ' + fmtDate(date) + '</div>' +
+        '</div>' +
+      '</div>';
+    }).join('');
+  } catch (e) {
+    $('deposit-loading').style.display = 'none';
+    $('deposit-list').innerHTML = '<div class="error-state">Не удалось загрузить историю</div>';
+  }
+}
+
+function escHtml(s) {
+  const d = document.createElement('div');
+  d.textContent = s;
+  return d.innerHTML;
+}
+
+// --- Init ---
+loadQR();
+loadWithdrawals();
+loadDeposits();
+</script>
+</body>
+</html>

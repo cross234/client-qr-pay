@@ -1,0 +1,515 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>QR Оплата</title>
+<style>
+:root {
+  --bg: #0a1628;
+  --card: #0f1d35;
+  --card2: #132444;
+  --border: #1c2f52;
+  --text: #faf5ef;
+  --muted: #b8a99a;
+  --accent: #e8d5b7;
+  --accent2: #d4b896;
+  --ok: #7dd3a8;
+  --bad: #e88b8b;
+  --warn: #e8c86b;
+  --shadow: 0 12px 30px rgba(0,0,0,.4);
+}
+
+* { margin: 0; padding: 0; box-sizing: border-box; }
+
+body {
+  font-family: system-ui, -apple-system, sans-serif;
+  background: var(--bg);
+  color: var(--text);
+  min-height: 100vh;
+  display: flex;
+  justify-content: center;
+}
+
+.container {
+  width: 100%;
+  max-width: 480px;
+  padding: 16px;
+  padding-bottom: 40px;
+}
+
+.header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 20px;
+}
+
+.back-btn {
+  width: 40px;
+  height: 40px;
+  border-radius: 12px;
+  background: var(--card);
+  border: 1px solid var(--border);
+  color: var(--accent);
+  font-size: 20px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  text-decoration: none;
+  flex-shrink: 0;
+}
+
+.header h1 {
+  font-size: 22px;
+  font-weight: 700;
+  color: var(--accent);
+}
+
+.balance-card {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  padding: 18px 20px;
+  margin-bottom: 20px;
+  box-shadow: var(--shadow);
+}
+
+.balance-label {
+  font-size: 13px;
+  color: var(--muted);
+  margin-bottom: 4px;
+}
+
+.balance-value {
+  font-size: 28px;
+  font-weight: 700;
+  color: var(--text);
+}
+
+.balance-value span {
+  font-size: 16px;
+  color: var(--muted);
+  font-weight: 400;
+}
+
+.form-card {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 20px;
+  padding: 24px 20px;
+  box-shadow: var(--shadow);
+}
+
+.upload-area {
+  border: 2px dashed var(--border);
+  border-radius: 16px;
+  padding: 32px 16px;
+  text-align: center;
+  cursor: pointer;
+  transition: border-color .2s, background .2s;
+  margin-bottom: 20px;
+  position: relative;
+  overflow: hidden;
+}
+
+.upload-area:hover, .upload-area.dragover {
+  border-color: var(--accent2);
+  background: rgba(232,213,183,.04);
+}
+
+.upload-area.has-image {
+  padding: 0;
+  border-style: solid;
+  border-color: var(--accent2);
+}
+
+.upload-icon {
+  font-size: 40px;
+  margin-bottom: 8px;
+}
+
+.upload-text {
+  color: var(--muted);
+  font-size: 14px;
+}
+
+.upload-text strong {
+  color: var(--accent);
+}
+
+.upload-area input[type="file"] {
+  position: absolute;
+  inset: 0;
+  opacity: 0;
+  cursor: pointer;
+}
+
+.preview-img {
+  width: 100%;
+  max-height: 240px;
+  object-fit: contain;
+  border-radius: 14px;
+  display: none;
+}
+
+.upload-area.has-image .preview-img { display: block; }
+.upload-area.has-image .upload-icon,
+.upload-area.has-image .upload-text { display: none; }
+
+.change-photo {
+  display: none;
+  position: absolute;
+  bottom: 10px;
+  right: 10px;
+  background: rgba(15,29,53,.85);
+  color: var(--accent);
+  font-size: 12px;
+  padding: 6px 12px;
+  border-radius: 10px;
+  pointer-events: none;
+}
+
+.upload-area.has-image .change-photo { display: block; }
+
+.field {
+  margin-bottom: 18px;
+}
+
+.field label {
+  display: block;
+  font-size: 13px;
+  color: var(--muted);
+  margin-bottom: 6px;
+  font-weight: 500;
+}
+
+.field input, .field textarea {
+  width: 100%;
+  background: var(--card2);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  padding: 14px 16px;
+  color: var(--text);
+  font-size: 16px;
+  font-family: inherit;
+  outline: none;
+  transition: border-color .2s;
+}
+
+.field input:focus, .field textarea:focus {
+  border-color: var(--accent2);
+}
+
+.field textarea {
+  resize: vertical;
+  min-height: 60px;
+}
+
+.field input::placeholder, .field textarea::placeholder {
+  color: #5a6b85;
+}
+
+.amount-row {
+  display: flex;
+  gap: 12px;
+  align-items: flex-end;
+}
+
+.amount-row .field:first-child { flex: 1; }
+
+.usdt-display {
+  background: var(--card2);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  padding: 14px 16px;
+  font-size: 16px;
+  color: var(--ok);
+  font-weight: 600;
+  white-space: nowrap;
+  min-width: 110px;
+  text-align: center;
+  height: 50px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-bottom: 18px;
+}
+
+.usdt-display.loading {
+  color: var(--muted);
+  font-weight: 400;
+  font-size: 13px;
+}
+
+.insufficient {
+  color: var(--bad);
+  font-size: 13px;
+  margin-top: 6px;
+  display: none;
+}
+
+.insufficient.show { display: block; }
+
+.error-msg {
+  background: rgba(232,139,139,.1);
+  border: 1px solid rgba(232,139,139,.3);
+  color: var(--bad);
+  border-radius: 12px;
+  padding: 12px 16px;
+  font-size: 14px;
+  margin-bottom: 16px;
+  display: none;
+}
+
+.error-msg.show { display: block; }
+
+.success-msg {
+  background: rgba(125,211,168,.1);
+  border: 1px solid rgba(125,211,168,.3);
+  color: var(--ok);
+  border-radius: 12px;
+  padding: 16px;
+  font-size: 16px;
+  text-align: center;
+  font-weight: 600;
+  display: none;
+}
+
+.success-msg.show { display: block; }
+
+.submit-btn {
+  width: 100%;
+  padding: 16px;
+  border-radius: 16px;
+  border: none;
+  background: linear-gradient(135deg, var(--accent), var(--accent2));
+  color: var(--bg);
+  font-size: 16px;
+  font-weight: 700;
+  font-family: inherit;
+  cursor: pointer;
+  transition: opacity .2s, transform .1s;
+}
+
+.submit-btn:active { transform: scale(.98); }
+.submit-btn:disabled {
+  opacity: .5;
+  cursor: not-allowed;
+  transform: none;
+}
+
+.submit-btn .spinner {
+  display: inline-block;
+  width: 18px;
+  height: 18px;
+  border: 2.5px solid rgba(10,22,40,.3);
+  border-top-color: var(--bg);
+  border-radius: 50%;
+  animation: spin .6s linear infinite;
+  vertical-align: middle;
+  margin-right: 8px;
+}
+
+@keyframes spin { to { transform: rotate(360deg); } }
+
+.rate-info {
+  text-align: center;
+  font-size: 12px;
+  color: var(--muted);
+  margin-top: 12px;
+}
+</style>
+</head>
+<body>
+
+<div class="container">
+  <div class="header">
+    <a href="index.html" class="back-btn">&larr;</a>
+    <h1>QR Оплата</h1>
+  </div>
+
+  <div class="balance-card">
+    <div class="balance-label">Ваш баланс</div>
+    <div class="balance-value" id="balance">... <span>USDT</span></div>
+  </div>
+
+  <div class="form-card">
+    <div class="upload-area" id="uploadArea">
+      <div class="upload-icon">📷</div>
+      <div class="upload-text">Нажмите, чтобы<br><strong>загрузить QR-код</strong></div>
+      <input type="file" id="fileInput" accept="image/*" capture="environment">
+      <img class="preview-img" id="previewImg" alt="QR Preview">
+      <div class="change-photo">Изменить</div>
+    </div>
+
+    <div class="amount-row">
+      <div class="field">
+        <label>Сумма (RUB)</label>
+        <input type="number" id="amountRub" placeholder="0" min="0" step="any" inputmode="decimal">
+      </div>
+      <div class="usdt-display loading" id="usdtDisplay">...</div>
+    </div>
+    <div class="insufficient" id="insufficient">Недостаточно средств</div>
+
+    <div class="field">
+      <label>Заметка (необязательно)</label>
+      <textarea id="note" placeholder="Комментарий к платежу..." rows="2"></textarea>
+    </div>
+
+    <div class="error-msg" id="errorMsg"></div>
+    <div class="success-msg" id="successMsg">Отправлено на проверку ✅</div>
+
+    <button class="submit-btn" id="submitBtn" disabled>Отправить на оплату</button>
+
+    <div class="rate-info" id="rateInfo"></div>
+  </div>
+</div>
+
+<script>
+const TOKEN = localStorage.getItem('auth_token') || '';
+const BASE = localStorage.getItem('worker_base') || 'https://client-qr-pay.YOUR.workers.dev';
+
+const headers = { 'Authorization': 'Bearer ' + TOKEN };
+
+const $ = id => document.getElementById(id);
+
+let currentRate = null;
+let currentBalance = null;
+let selectedFile = null;
+let debounceTimer = null;
+
+// --- Load balance ---
+async function loadBalance() {
+  try {
+    const res = await fetch(BASE + '/api/me', { headers });
+    if (!res.ok) throw new Error('Ошибка загрузки');
+    const data = await res.json();
+    currentBalance = parseFloat(data.balance || data.balanceUsdt || 0);
+    $('balance').innerHTML = currentBalance.toFixed(2) + ' <span>USDT</span>';
+  } catch (e) {
+    $('balance').innerHTML = '— <span>USDT</span>';
+  }
+}
+
+// --- Load rate ---
+async function loadRate() {
+  try {
+    const res = await fetch(BASE + '/api/rate', { headers });
+    if (!res.ok) throw new Error('Ошибка');
+    const data = await res.json();
+    currentRate = parseFloat(data.rate || data.rubPerUsdt || data.rub_per_usdt);
+    $('rateInfo').textContent = '1 USDT ≈ ' + currentRate.toFixed(2) + ' RUB';
+    $('usdtDisplay').textContent = '0 USDT';
+    $('usdtDisplay').classList.remove('loading');
+  } catch (e) {
+    $('usdtDisplay').textContent = 'Ошибка';
+    $('usdtDisplay').classList.remove('loading');
+  }
+}
+
+// --- File selection + preview ---
+$('fileInput').addEventListener('change', function(e) {
+  const file = e.target.files[0];
+  if (!file) return;
+  selectedFile = file;
+  const reader = new FileReader();
+  reader.onload = function(ev) {
+    $('previewImg').src = ev.target.result;
+    $('uploadArea').classList.add('has-image');
+  };
+  reader.readAsDataURL(file);
+  validateForm();
+});
+
+// --- Amount input with debounced USDT calc ---
+$('amountRub').addEventListener('input', function() {
+  clearTimeout(debounceTimer);
+  debounceTimer = setTimeout(calcUsdt, 300);
+  validateForm();
+});
+
+function calcUsdt() {
+  const rub = parseFloat($('amountRub').value);
+  if (!rub || !currentRate) {
+    $('usdtDisplay').textContent = '0 USDT';
+    $('insufficient').classList.remove('show');
+    return;
+  }
+  const usdt = rub / currentRate;
+  $('usdtDisplay').textContent = usdt.toFixed(2) + ' USDT';
+
+  if (currentBalance !== null && usdt > currentBalance) {
+    $('insufficient').classList.add('show');
+  } else {
+    $('insufficient').classList.remove('show');
+  }
+}
+
+// --- Form validation ---
+function validateForm() {
+  const hasFile = !!selectedFile;
+  const hasAmount = parseFloat($('amountRub').value) > 0;
+  $('submitBtn').disabled = !(hasFile && hasAmount);
+}
+
+// --- Submit ---
+$('submitBtn').addEventListener('click', async function() {
+  const btn = $('submitBtn');
+  const errEl = $('errorMsg');
+  const successEl = $('successMsg');
+
+  errEl.classList.remove('show');
+  successEl.classList.remove('show');
+
+  if (!selectedFile) { showError('Загрузите QR-код'); return; }
+  const amountRub = parseFloat($('amountRub').value);
+  if (!amountRub || amountRub <= 0) { showError('Введите сумму'); return; }
+
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spinner"></span>Отправка...';
+
+  try {
+    const fd = new FormData();
+    fd.append('image', selectedFile);
+    fd.append('amountRub', amountRub);
+    fd.append('note', $('note').value || '');
+
+    const res = await fetch(BASE + '/api/qr/submit', {
+      method: 'POST',
+      headers: { 'Authorization': 'Bearer ' + TOKEN },
+      body: fd
+    });
+
+    if (!res.ok) {
+      const data = await res.json().catch(() => ({}));
+      throw new Error(data.error || data.message || 'Ошибка отправки');
+    }
+
+    successEl.classList.add('show');
+    btn.style.display = 'none';
+
+    setTimeout(() => {
+      window.location.href = 'history.html';
+    }, 2000);
+
+  } catch (e) {
+    showError(e.message);
+    btn.disabled = false;
+    btn.innerHTML = 'Отправить на оплату';
+  }
+});
+
+function showError(msg) {
+  const el = $('errorMsg');
+  el.textContent = msg;
+  el.classList.add('show');
+}
+
+// --- Init ---
+loadBalance();
+loadRate();
+</script>
+</body>
+</html>

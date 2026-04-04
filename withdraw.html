@@ -1,0 +1,478 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<title>Вывод USDT</title>
+<style>
+:root {
+  --bg: #0a1628;
+  --card: #0f1d35;
+  --card2: #132444;
+  --border: #1c2f52;
+  --text: #faf5ef;
+  --muted: #b8a99a;
+  --accent: #e8d5b7;
+  --accent2: #d4b896;
+  --ok: #7dd3a8;
+  --bad: #e88b8b;
+  --warn: #e8c86b;
+  --shadow: 0 12px 30px rgba(0,0,0,.4);
+}
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+body {
+  font-family: system-ui, -apple-system, sans-serif;
+  background: var(--bg);
+  color: var(--text);
+  min-height: 100vh;
+  display: flex;
+  justify-content: center;
+  padding: 16px;
+}
+.container {
+  width: 100%;
+  max-width: 480px;
+}
+.header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 20px;
+  padding: 8px 0;
+}
+.back-btn {
+  background: var(--card2);
+  border: 1px solid var(--border);
+  color: var(--accent);
+  width: 40px;
+  height: 40px;
+  border-radius: 12px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  font-size: 20px;
+  text-decoration: none;
+  flex-shrink: 0;
+  transition: background .2s;
+}
+.back-btn:hover { background: var(--card); }
+.header h1 {
+  font-size: 22px;
+  font-weight: 700;
+  color: var(--text);
+}
+.card {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 20px;
+  padding: 20px;
+  margin-bottom: 16px;
+  box-shadow: var(--shadow);
+}
+.balance-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+.balance-label {
+  color: var(--muted);
+  font-size: 14px;
+}
+.balance-value {
+  font-size: 24px;
+  font-weight: 700;
+  color: var(--accent);
+}
+.balance-currency {
+  font-size: 14px;
+  color: var(--muted);
+  margin-left: 4px;
+}
+.section-title {
+  font-size: 14px;
+  color: var(--muted);
+  margin-bottom: 10px;
+  text-transform: uppercase;
+  letter-spacing: .5px;
+}
+.form-group {
+  margin-bottom: 16px;
+}
+.form-label {
+  display: block;
+  font-size: 13px;
+  color: var(--muted);
+  margin-bottom: 6px;
+}
+.input-wrap {
+  display: flex;
+  gap: 8px;
+}
+input[type="number"],
+input[type="text"],
+select {
+  width: 100%;
+  background: var(--card2);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 12px 14px;
+  font-size: 15px;
+  color: var(--text);
+  font-family: system-ui, sans-serif;
+  outline: none;
+  transition: border-color .2s;
+  -webkit-appearance: none;
+  appearance: none;
+}
+input:focus, select:focus { border-color: var(--accent2); }
+input::placeholder { color: var(--muted); opacity: .6; }
+select {
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'%3E%3Cpath d='M1 1l5 5 5-5' stroke='%23b8a99a' stroke-width='2' fill='none'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 14px center;
+  padding-right: 36px;
+  cursor: pointer;
+}
+select option {
+  background: var(--card);
+  color: var(--text);
+}
+.max-btn {
+  background: var(--card2);
+  border: 1px solid var(--accent2);
+  color: var(--accent);
+  padding: 0 16px;
+  border-radius: 12px;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  white-space: nowrap;
+  flex-shrink: 0;
+  transition: background .2s;
+}
+.max-btn:hover { background: var(--border); }
+.submit-btn {
+  width: 100%;
+  background: linear-gradient(135deg, var(--accent2), var(--accent));
+  border: none;
+  border-radius: 14px;
+  padding: 14px;
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--bg);
+  cursor: pointer;
+  transition: opacity .2s, transform .1s;
+}
+.submit-btn:hover { opacity: .9; }
+.submit-btn:active { transform: scale(.98); }
+.submit-btn:disabled {
+  opacity: .5;
+  cursor: not-allowed;
+  transform: none;
+}
+.success-msg {
+  background: rgba(125,211,168,.1);
+  border: 1px solid var(--ok);
+  border-radius: 12px;
+  padding: 12px 16px;
+  color: var(--ok);
+  font-size: 14px;
+  text-align: center;
+  margin-bottom: 16px;
+  display: none;
+}
+.error-msg {
+  background: rgba(232,139,139,.1);
+  border: 1px solid var(--bad);
+  border-radius: 12px;
+  padding: 12px 16px;
+  color: var(--bad);
+  font-size: 13px;
+  text-align: center;
+  margin-bottom: 16px;
+}
+.history-item {
+  background: var(--card2);
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  padding: 14px 16px;
+  margin-bottom: 10px;
+}
+.history-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+.history-amount {
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--bad);
+}
+.history-date {
+  font-size: 12px;
+  color: var(--muted);
+}
+.history-addr {
+  font-size: 12px;
+  color: var(--muted);
+  margin-top: 6px;
+  word-break: break-all;
+}
+.status-badge {
+  display: inline-block;
+  font-size: 11px;
+  font-weight: 600;
+  padding: 3px 10px;
+  border-radius: 8px;
+  margin-top: 6px;
+}
+.status-pending {
+  background: rgba(232,200,107,.15);
+  color: var(--warn);
+}
+.status-completed, .status-done, .status-approved {
+  background: rgba(125,211,168,.15);
+  color: var(--ok);
+}
+.status-rejected, .status-failed, .status-cancelled {
+  background: rgba(232,139,139,.15);
+  color: var(--bad);
+}
+.empty-state {
+  text-align: center;
+  color: var(--muted);
+  font-size: 14px;
+  padding: 20px 0;
+}
+.skeleton {
+  background: linear-gradient(90deg, var(--card2) 25%, var(--border) 50%, var(--card2) 75%);
+  background-size: 200% 100%;
+  animation: shimmer 1.5s infinite;
+  border-radius: 8px;
+}
+@keyframes shimmer {
+  0% { background-position: 200% 0; }
+  100% { background-position: -200% 0; }
+}
+.skeleton-line {
+  height: 18px;
+  margin-bottom: 8px;
+  border-radius: 8px;
+}
+.skeleton-line.short { width: 60%; }
+</style>
+</head>
+<body>
+<div class="container">
+  <div class="header">
+    <a href="index.html" class="back-btn">&larr;</a>
+    <h1>Вывод USDT</h1>
+  </div>
+
+  <div id="errorBox" style="display:none" class="error-msg"></div>
+  <div id="successBox" class="success-msg"></div>
+
+  <!-- Balance -->
+  <div class="card">
+    <div class="balance-row">
+      <span class="balance-label">Ваш баланс</span>
+      <div>
+        <span class="balance-value" id="balanceValue">--</span>
+        <span class="balance-currency">USDT</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- Withdraw Form -->
+  <div class="card">
+    <div class="section-title">Новая заявка</div>
+    <form id="withdrawForm" onsubmit="return submitWithdraw(event)">
+      <div class="form-group">
+        <label class="form-label">Сумма USDT</label>
+        <div class="input-wrap">
+          <input type="number" id="amountInput" placeholder="0.00" step="0.01" min="0.01" required>
+          <button type="button" class="max-btn" onclick="fillMax()">Макс</button>
+        </div>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Адрес получателя</label>
+        <input type="text" id="addressInput" placeholder="Введите адрес кошелька" required>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Сеть</label>
+        <select id="networkSelect">
+          <option value="TRC20">TRC20</option>
+          <option value="ERC20">ERC20</option>
+          <option value="BEP20">BEP20</option>
+          <option value="TON">TON</option>
+        </select>
+      </div>
+      <button type="submit" class="submit-btn" id="submitBtn">Отправить заявку</button>
+    </form>
+  </div>
+
+  <!-- History -->
+  <div class="card">
+    <div class="section-title">Последние заявки</div>
+    <div id="historyList">
+      <div id="historySkeleton">
+        <div class="skeleton skeleton-line"></div>
+        <div class="skeleton skeleton-line short"></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+const TOKEN = localStorage.getItem('auth_token') || '';
+const BASE = localStorage.getItem('worker_base') || 'https://client-qr-pay.YOUR.workers.dev';
+
+let userBalance = 0;
+
+function headers() {
+  return { 'Authorization': 'Bearer ' + TOKEN, 'Content-Type': 'application/json' };
+}
+
+function showError(msg) {
+  const box = document.getElementById('errorBox');
+  box.textContent = msg;
+  box.style.display = 'block';
+  setTimeout(() => { box.style.display = 'none'; }, 5000);
+}
+
+function showSuccess(msg) {
+  const box = document.getElementById('successBox');
+  box.textContent = msg;
+  box.style.display = 'block';
+  setTimeout(() => { box.style.display = 'none'; }, 4000);
+}
+
+function formatDate(d) {
+  if (!d) return '';
+  const dt = new Date(d);
+  return dt.toLocaleDateString('ru-RU', { day: '2-digit', month: '2-digit', year: 'numeric' }) +
+    ' ' + dt.toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' });
+}
+
+function truncate(str, len) {
+  if (!str) return '';
+  if (str.length <= len) return str;
+  return str.slice(0, len / 2) + '...' + str.slice(-len / 2);
+}
+
+function statusClass(s) {
+  if (!s) return 'status-pending';
+  const low = s.toLowerCase();
+  if (low === 'completed' || low === 'done' || low === 'approved') return 'status-completed';
+  if (low === 'rejected' || low === 'failed' || low === 'cancelled') return 'status-rejected';
+  return 'status-pending';
+}
+
+function statusLabel(s) {
+  if (!s) return 'Ожидание';
+  const map = {
+    'pending': 'Ожидание',
+    'processing': 'Обработка',
+    'completed': 'Выполнено',
+    'done': 'Выполнено',
+    'approved': 'Одобрено',
+    'rejected': 'Отклонено',
+    'failed': 'Ошибка',
+    'cancelled': 'Отменено'
+  };
+  return map[s.toLowerCase()] || s;
+}
+
+function fillMax() {
+  document.getElementById('amountInput').value = userBalance > 0 ? userBalance.toFixed(2) : '';
+}
+
+async function loadBalance() {
+  try {
+    const r = await fetch(BASE + '/api/me', { headers: headers() });
+    if (!r.ok) throw new Error('Ошибка');
+    const data = await r.json();
+    userBalance = parseFloat(data.user ? data.user.balance : (data.balance || 0));
+    document.getElementById('balanceValue').textContent = userBalance.toFixed(2);
+  } catch (e) {
+    document.getElementById('balanceValue').textContent = '0.00';
+  }
+}
+
+async function submitWithdraw(e) {
+  e.preventDefault();
+
+  const amount = parseFloat(document.getElementById('amountInput').value);
+  const address = document.getElementById('addressInput').value.trim();
+  const network = document.getElementById('networkSelect').value;
+
+  if (!amount || amount <= 0) { showError('Введите корректную сумму'); return false; }
+  if (amount > userBalance) { showError('Недостаточно средств. Баланс: ' + userBalance.toFixed(2) + ' USDT'); return false; }
+  if (!address) { showError('Введите адрес получателя'); return false; }
+
+  const btn = document.getElementById('submitBtn');
+  btn.disabled = true;
+  btn.textContent = 'Отправка...';
+
+  try {
+    const r = await fetch(BASE + '/api/withdraw', {
+      method: 'POST',
+      headers: headers(),
+      body: JSON.stringify({ amountUsdt: amount, address: address, network: network })
+    });
+
+    if (!r.ok) {
+      const err = await r.json().catch(() => ({}));
+      throw new Error(err.error || err.message || 'Ошибка отправки');
+    }
+
+    showSuccess('Заявка отправлена \u2705');
+    document.getElementById('amountInput').value = '';
+    document.getElementById('addressInput').value = '';
+    loadBalance();
+    loadHistory();
+  } catch (e) {
+    showError(e.message || 'Не удалось отправить заявку');
+  } finally {
+    btn.disabled = false;
+    btn.textContent = 'Отправить заявку';
+  }
+
+  return false;
+}
+
+async function loadHistory() {
+  const list = document.getElementById('historyList');
+  try {
+    const r = await fetch(BASE + '/api/withdraw/history', { headers: headers() });
+    if (!r.ok) throw new Error('Ошибка');
+    const data = await r.json();
+    const items = (data.items || []).slice(0, 5);
+
+    if (items.length === 0) {
+      list.innerHTML = '<div class="empty-state">Нет заявок на вывод</div>';
+      return;
+    }
+
+    list.innerHTML = items.map(item => {
+      const status = item.status || 'pending';
+      return '<div class="history-item">' +
+        '<div class="history-row">' +
+          '<span class="history-amount">-' + parseFloat(item.amount || item.amountUsdt || 0).toFixed(2) + ' USDT</span>' +
+          '<span class="history-date">' + formatDate(item.date || item.createdAt) + '</span>' +
+        '</div>' +
+        '<div class="history-addr">' + truncate(item.address || '', 30) + '</div>' +
+        '<span class="status-badge ' + statusClass(status) + '">' + statusLabel(status) + '</span>' +
+      '</div>';
+    }).join('');
+  } catch (e) {
+    list.innerHTML = '<div class="empty-state">Не удалось загрузить историю</div>';
+  }
+}
+
+loadBalance();
+loadHistory();
+</script>
+</body>
+</html>
