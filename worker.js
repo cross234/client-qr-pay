@@ -98,8 +98,11 @@ async function saveSettings(env, patch) {
 let _rateCache = { rate: 0, ts: 0 };
 
 async function fetchRapiraRate() {
+  // Try Rapira first
   try {
-    const r = await fetch("https://api.rapira.net/market/overview");
+    const r = await fetch("https://api.rapira.net/market/overview", {
+      headers: { "User-Agent": "Mozilla/5.0" }
+    });
     const j = await r.json();
     const allPairs = [
       ...(j.changeRank || []),
@@ -109,6 +112,21 @@ async function fetchRapiraRate() {
     const usdt = allPairs.find(p => p.symbol === "USDT/RUB");
     if (usdt && usdt.close > 0) return Number(usdt.close);
   } catch {}
+
+  // Fallback: Garantex
+  try {
+    const r = await fetch("https://garantex.org/api/v2/trades?market=usdtrub&limit=1");
+    const j = await r.json();
+    if (Array.isArray(j) && j.length > 0 && j[0].price) return Number(j[0].price);
+  } catch {}
+
+  // Fallback: fetch from a public USDT/RUB source
+  try {
+    const r = await fetch("https://api.coingecko.com/api/v3/simple/price?ids=tether&vs_currencies=rub");
+    const j = await r.json();
+    if (j.tether && j.tether.rub > 0) return Number(j.tether.rub);
+  } catch {}
+
   return 0;
 }
 
