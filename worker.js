@@ -76,7 +76,7 @@ const DEFAULT_SETTINGS = {
   usdtNetwork: "TRC20",
   rateMode: "rapira",       // "rapira" | "manual"
   manualRate: 0,
-  rateMarkup: 0,            // дополнительная наценка в рублях
+  rateMarkupPercent: 0,      // наценка к курсу в процентах (+1.5 = +1.5%)
   botUsername: "",
   siteName: "QR Pay",
   mainWorkerUrl: "",         // URL основного обменника (для P2P прокси)
@@ -112,22 +112,28 @@ async function fetchRapiraRate() {
   return 0;
 }
 
+function applyMarkup(baseRate, pct) {
+  if (!pct) return baseRate;
+  return baseRate * (1 + Number(pct) / 100);
+}
+
 async function getRate(env) {
   const cfg = await getSettings(env);
+  const pct = cfg.rateMarkupPercent || 0;
   if (cfg.rateMode === "manual" && cfg.manualRate > 0) {
-    return cfg.manualRate + (cfg.rateMarkup || 0);
+    return applyMarkup(cfg.manualRate, pct);
   }
   // rapira
   if (_rateCache.rate > 0 && now() - _rateCache.ts < 60000) {
-    return _rateCache.rate + (cfg.rateMarkup || 0);
+    return applyMarkup(_rateCache.rate, pct);
   }
   const rate = await fetchRapiraRate();
   if (rate > 0) {
     _rateCache = { rate, ts: now() };
-    return rate + (cfg.rateMarkup || 0);
+    return applyMarkup(rate, pct);
   }
   // fallback
-  return _rateCache.rate > 0 ? _rateCache.rate + (cfg.rateMarkup || 0) : 0;
+  return _rateCache.rate > 0 ? applyMarkup(_rateCache.rate, pct) : 0;
 }
 
 // ── Auth helpers ─────────────────────────────────────────────
@@ -355,7 +361,7 @@ async function handleGetRate(req, env) {
 //  QR PAYMENT FLOW
 // ════════════════════════════════════════════════════════════
 
-// POST /api/qr/submit  (multipart: image + amountRub)
+// POST /api/qr/submit  (JSON: qrData + amountRub + optional image)
 async function handleQrSubmit(req, env) {
   const [user, err] = await requireUser(req, env);
   if (err) return err;
@@ -364,6 +370,7 @@ async function handleQrSubmit(req, env) {
   let amountRub = 0;
   let imageB64 = "";
   let note = "";
+  let qrDataText = "";
 
   const ct = req.headers.get("content-type") || "";
 
@@ -371,6 +378,7 @@ async function handleQrSubmit(req, env) {
     const fd = await req.formData();
     amountRub = Number(fd.get("amountRub") || 0);
     note = String(fd.get("note") || "").slice(0, 500);
+    qrDataText = String(fd.get("qrData") || "").slice(0, 5000);
     const file = fd.get("image");
     if (file && file.size > 0) {
       const buf = await file.arrayBuffer();
@@ -384,10 +392,11 @@ async function handleQrSubmit(req, env) {
     amountRub = Number(body.amountRub || 0);
     imageB64 = String(body.image || "");
     note = String(body.note || "").slice(0, 500);
+    qrDataText = String(body.qrData || "").slice(0, 5000);
   }
 
   if (amountRub <= 0) return bad("Amount must be > 0");
-  if (!imageB64) return bad("QR image required");
+  if (!qrDataText && !imageB64) return bad("QR data or image required");
 
   const rate = await getRate(env);
   if (rate <= 0) return bad("Rate unavailable, try later");
@@ -411,6 +420,7 @@ async function handleQrSubmit(req, env) {
     amountUsdt: Math.round(amountUsdt * 1e6) / 1e6,
     amountUsdtMicro,
     status: "PENDING",    // PENDING → PAID | REJECTED
+    qrData: qrDataText,
     note,
     createdAt: now(),
     updatedAt: now(),
@@ -418,7 +428,7 @@ async function handleQrSubmit(req, env) {
   };
 
   await kvPut(env, `qr:${qrId}`, qrRecord);
-  await kvPut(env, `qr_img:${qrId}`, imageB64);
+  if (imageB64) await kvPut(env, `qr_img:${qrId}`, imageB64);
 
   // Freeze USDT immediately
   await adjustBalance(env, user.tgId, -amountUsdtMicro, `QR freeze: ${qrId}`);
@@ -831,7 +841,7 @@ async function handleAdminSaveSettings(req, env) {
   const body = await req.json().catch(() => ({}));
   const allowedKeys = [
     "adminTgIds", "usdtWallet", "usdtNetwork", "rateMode", "manualRate",
-    "rateMarkup", "botUsername", "siteName", "webAppUrl", "mainWorkerUrl", "mainAdminToken"
+    "rateMarkupPercent", "botUsername", "siteName", "webAppUrl", "mainWorkerUrl", "mainAdminToken"
   ];
 
   const patch = {};
@@ -983,12 +993,188 @@ async function handleRequest(request, env, ctx) {
     if (path === "/api/admin/settings" && method === "POST")
       return await handleAdminSaveSettings(request, env);
 
+    // Deposit request (user creates pending deposit with unique amount)
+    if (path === "/api/deposit/request" && method === "POST")
+      return await handleDepositRequest(request, env);
+    if (path === "/api/deposit/status" && method === "GET")
+      return await handleDepositStatus(request, env);
+
     return bad("Not found", 404);
   } catch (e) {
     return bad("Internal error: " + (e.message || String(e)), 500);
   }
 }
 
+// ════════════════════════════════════════════════════════════
+//  AUTO-DEPOSIT: TronGrid scanner
+// ════════════════════════════════════════════════════════════
+
+const USDT_TRC20_CONTRACT = "TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t";
+const DEPOSIT_TTL_MS = 60 * 60 * 1000; // 1 hour
+
+// POST /api/deposit/request — user creates pending deposit
+async function handleDepositRequest(req, env) {
+  const [user, err] = await requireUser(req, env);
+  if (err) return err;
+
+  const body = await req.json().catch(() => ({}));
+  const amountUsdt = Number(body.amountUsdt || 0);
+  if (amountUsdt < 1 || amountUsdt > 100000) return bad("Amount must be 1-100000 USDT");
+
+  const cfg = await getSettings(env);
+  const wallet = cfg.usdtWallet || "";
+  if (!wallet) return bad("Deposit wallet not configured");
+
+  // Load pending deposits
+  const pending = (await kvGet(env, "pending_deposits")) || [];
+
+  // Generate unique amount (add random cents to avoid collisions)
+  const baseE6 = Math.round(amountUsdt * 1e6);
+  let uniqueE6 = baseE6;
+  let attempts = 0;
+  while (attempts < 50) {
+    const suffix = Math.floor(1 + Math.random() * 9999) * 100;
+    uniqueE6 = baseE6 + suffix;
+    const exists = pending.find(p => p.uniqueE6 === uniqueE6 && p.status === "PENDING");
+    if (!exists) break;
+    attempts++;
+  }
+
+  const uniqueAmountUsdt = uniqueE6 / 1e6;
+
+  const depReq = {
+    id: uid(),
+    tgId: user.tgId,
+    username: user.username,
+    requestedUsdt: amountUsdt,
+    uniqueE6,
+    uniqueAmountUsdt,
+    status: "PENDING",
+    createdAt: now(),
+    txHash: "",
+  };
+
+  pending.push(depReq);
+  // Keep only last 500
+  const trimmed = pending.slice(-500);
+  await kvPut(env, "pending_deposits", trimmed);
+
+  return json({
+    ok: true,
+    wallet,
+    network: cfg.usdtNetwork || "TRC20",
+    uniqueAmountUsdt,
+    expiresIn: Math.floor(DEPOSIT_TTL_MS / 1000),
+  });
+}
+
+// GET /api/deposit/status — poll for deposit match
+async function handleDepositStatus(req, env) {
+  const [user, err] = await requireUser(req, env);
+  if (err) return err;
+
+  const pending = (await kvGet(env, "pending_deposits")) || [];
+  const mine = pending.filter(p => String(p.tgId) === String(user.tgId));
+
+  // Find the most recent
+  const latest = mine.sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0))[0];
+  if (!latest) return json({ ok: true, status: "NONE" });
+
+  return json({
+    ok: true,
+    status: latest.status,
+    amountUsdt: latest.uniqueAmountUsdt || 0,
+    txHash: latest.txHash || "",
+  });
+}
+
+// Cron: scan TronGrid for incoming USDT deposits
+async function scanDeposits(env) {
+  const cfg = await getSettings(env);
+  const wallet = (cfg.usdtWallet || "").trim();
+  if (!wallet) return;
+
+  const pending = (await kvGet(env, "pending_deposits")) || [];
+  const active = pending.filter(p => p.status === "PENDING" && (now() - p.createdAt < DEPOSIT_TTL_MS));
+  if (!active.length) return;
+
+  // Fetch recent TRC20 transfers to wallet
+  let txs = [];
+  try {
+    const url = `https://api.trongrid.io/v1/accounts/${wallet}/transactions/trc20?only_to=true&contract_address=${USDT_TRC20_CONTRACT}&limit=50&order_by=block_timestamp,desc`;
+    const headers = {};
+    if (cfg.trongridApiKey) headers["TRON-PRO-API-KEY"] = cfg.trongridApiKey;
+    const r = await fetch(url, { headers });
+    const j = await r.json();
+    txs = j.data || [];
+  } catch { return; }
+
+  let changed = false;
+
+  for (const tx of txs) {
+    const valueE6 = Number(tx.value || 0);
+    const txHash = tx.transaction_id || "";
+
+    // Find matching pending deposit
+    const match = active.find(p =>
+      p.uniqueE6 === valueE6 &&
+      p.status === "PENDING" &&
+      !pending.some(pp => pp.txHash === txHash && pp.status === "CREDITED")
+    );
+    if (!match) continue;
+
+    // Credit balance
+    try {
+      await adjustBalance(env, match.tgId, valueE6, `Auto-deposit: ${txHash.slice(0, 16)}`);
+    } catch { continue; }
+
+    match.status = "CREDITED";
+    match.txHash = txHash;
+    match.creditedAt = now();
+    changed = true;
+
+    // Record in deposits
+    const depId = uid();
+    await kvPut(env, `dep:${depId}`, {
+      id: depId,
+      tgId: match.tgId,
+      username: match.username,
+      amountUsdt: valueE6 / 1e6,
+      amountMicro: valueE6,
+      txHash,
+      status: "CONFIRMED",
+      auto: true,
+      createdAt: now(),
+    });
+
+    // Notify user
+    await tgSend(env, match.tgId,
+      `💰 <b>Депозит зачислен!</b>\n\n` +
+      `💎 +${(valueE6 / 1e6).toFixed(2)} USDT\n` +
+      `🔗 TX: <code>${txHash.slice(0, 20)}...</code>`
+    );
+
+    // Notify admin
+    await tgNotifyAdmins(env,
+      `✅ <b>Автопополнение</b>\n\n` +
+      `👤 @${match.username || match.tgId}\n` +
+      `💎 +${(valueE6 / 1e6).toFixed(2)} USDT\n` +
+      `🔗 <code>${txHash}</code>`
+    );
+  }
+
+  if (changed) {
+    // Remove expired, keep last 500
+    const updated = pending.filter(p =>
+      p.status === "CREDITED" || (p.status === "PENDING" && now() - p.createdAt < DEPOSIT_TTL_MS)
+    ).slice(-500);
+    await kvPut(env, "pending_deposits", updated);
+  }
+}
+
 export default {
   fetch: handleRequest,
+  async scheduled(event, env, ctx) {
+    ctx.waitUntil(scanDeposits(env));
+  },
 };

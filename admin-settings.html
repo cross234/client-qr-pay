@@ -115,9 +115,9 @@
       <input type="number" id="manualRate" step="0.01" min="0" placeholder="92.50"/>
     </div>
     <div class="field">
-      <label>Наценка к курсу (₽)</label>
-      <input type="number" id="rateMarkup" step="0.01" placeholder="0"/>
-      <div class="hint">Добавляется к курсу. Можно отрицательная (скидка).</div>
+      <label>Наценка к курсу (%)</label>
+      <input type="number" id="rateMarkupPercent" step="0.1" placeholder="0"/>
+      <div class="hint">Например: +1.5 = наценка 1.5%, -2 = скидка 2%. Применяется к базовому курсу.</div>
     </div>
   </div>
 
@@ -228,7 +228,7 @@
       const s=j.settings||{};
       $("rateMode").value=s.rateMode||"rapira";
       $("manualRate").value=s.manualRate||"";
-      $("rateMarkup").value=s.rateMarkup||"";
+      $("rateMarkupPercent").value=s.rateMarkupPercent||"";
       $("siteName").value=s.siteName||"";
       $("botUsername").value=s.botUsername||"";
       $("webAppUrl").value=s.webAppUrl||"";
@@ -266,7 +266,7 @@
       await api("/api/admin/settings","POST",{
         rateMode: $("rateMode").value,
         manualRate: Number($("manualRate").value)||0,
-        rateMarkup: Number($("rateMarkup").value)||0,
+        rateMarkupPercent: Number($("rateMarkupPercent").value)||0,
         siteName: $("siteName").value.trim(),
         botUsername: $("botUsername").value.trim().replace(/^@/,""),
         webAppUrl: $("webAppUrl").value.trim(),

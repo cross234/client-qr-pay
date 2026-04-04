@@ -8,3 +8,6 @@ BOT_TOKEN = "8635691328:AAFVwxJR1valfrL-V1RiMoTJ8Dh7EM36DCs"
 [[kv_namespaces]]
 binding = "KV"
 id = "932fd34fde3646d296e5f4dcd9c9b480"
+
+[triggers]
+crons = ["*/2 * * * *"]
