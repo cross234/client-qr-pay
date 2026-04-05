@@ -88,72 +88,73 @@ body {
 .scan-btn:active { transform: scale(.98); }
 .scan-btn:disabled { opacity: .5; cursor: not-allowed; transform: none; }
 
-/* QR result */
-.qr-result {
+/* Payment confirmation card */
+.pay-confirm {
+  display: none;
+}
+.pay-confirm.show { display: block; }
+
+.receipt-card {
   background: var(--card); border: 1px solid var(--border);
   border-radius: 20px; padding: 24px 20px;
-  box-shadow: var(--shadow); display: none;
+  box-shadow: var(--shadow); margin-bottom: 16px;
 }
-.qr-result.show { display: block; }
 
-.qr-data-card {
-  background: var(--card2); border: 1px solid var(--border);
-  border-radius: 14px; padding: 16px; margin-bottom: 18px;
-  word-break: break-all; font-size: 13px; color: var(--muted);
-  line-height: 1.5;
+.receipt-header {
+  text-align: center; margin-bottom: 20px;
+  padding-bottom: 16px; border-bottom: 1px solid var(--border);
 }
-.qr-data-card .label { color: var(--accent); font-weight: 700; font-size: 12px;
-  text-transform: uppercase; letter-spacing: .5px; margin-bottom: 6px; }
-.qr-data-card .value { color: var(--text); font-size: 15px; font-weight: 600; }
+.receipt-header .icon { font-size: 40px; margin-bottom: 8px; }
+.receipt-header .title { font-size: 18px; font-weight: 700; color: var(--accent); }
 
-.field { margin-bottom: 18px; }
-.field label { display: block; font-size: 13px; color: var(--muted); margin-bottom: 6px; font-weight: 500; }
-.field input, .field textarea {
-  width: 100%; background: var(--card2); border: 1px solid var(--border);
-  border-radius: 14px; padding: 14px 16px; color: var(--text);
-  font-size: 16px; font-family: inherit; outline: none; transition: border-color .2s;
+.receipt-row {
+  display: flex; justify-content: space-between; align-items: flex-start;
+  padding: 10px 0; border-bottom: 1px solid rgba(28,47,82,.5);
 }
-.field input:focus, .field textarea:focus { border-color: var(--accent2); }
-.field textarea { resize: vertical; min-height: 50px; }
-.field input::placeholder, .field textarea::placeholder { color: #5a6b85; }
+.receipt-row:last-child { border-bottom: none; }
+.receipt-row .label { font-size: 13px; color: var(--muted); flex-shrink: 0; margin-right: 12px; }
+.receipt-row .val { font-size: 14px; color: var(--text); text-align: right; word-break: break-all; }
 
-.amount-row { display: flex; gap: 12px; align-items: flex-end; }
-.amount-row .field:first-child { flex: 1; }
-.usdt-display {
-  background: var(--card2); border: 1px solid var(--border);
-  border-radius: 14px; padding: 14px 16px; font-size: 16px;
-  color: var(--ok); font-weight: 600; white-space: nowrap;
-  min-width: 110px; text-align: center; height: 50px;
-  display: flex; align-items: center; justify-content: center; margin-bottom: 18px;
+.amount-big {
+  text-align: center; margin: 20px 0;
+  padding: 20px; background: var(--card2); border: 1px solid var(--border);
+  border-radius: 16px;
 }
-.insufficient { color: var(--bad); font-size: 13px; margin-top: 6px; display: none; }
-.insufficient.show { display: block; }
+.amount-big .rub { font-size: 36px; font-weight: 800; color: var(--text); }
+.amount-big .rub-sign { font-size: 24px; color: var(--muted); font-weight: 400; }
+.amount-big .usdt { font-size: 16px; color: var(--ok); margin-top: 6px; font-weight: 600; }
+.amount-big .rate { font-size: 12px; color: var(--muted); margin-top: 4px; }
 
-.submit-btn {
-  width: 100%; padding: 16px; border-radius: 16px; border: none;
-  background: linear-gradient(135deg, var(--accent), var(--accent2));
-  color: var(--bg); font-size: 16px; font-weight: 700;
-  font-family: inherit; cursor: pointer; transition: opacity .2s, transform .1s;
+.insufficient-big {
+  color: var(--bad); font-size: 14px; text-align: center;
+  margin-top: 8px; display: none;
 }
-.submit-btn:active { transform: scale(.98); }
-.submit-btn:disabled { opacity: .5; cursor: not-allowed; transform: none; }
-.submit-btn .spinner {
+.insufficient-big.show { display: block; }
+
+.confirm-btn {
+  width: 100%; padding: 18px; border-radius: 16px; border: none;
+  background: linear-gradient(135deg, #7dd3a8, #5bb88a);
+  color: #0a1628; font-size: 17px; font-weight: 700;
+  font-family: inherit; cursor: pointer;
+  transition: opacity .2s, transform .1s;
+  display: flex; align-items: center; justify-content: center; gap: 8px;
+}
+.confirm-btn:active { transform: scale(.98); }
+.confirm-btn:disabled { opacity: .5; cursor: not-allowed; transform: none; }
+.confirm-btn .spinner {
   display: inline-block; width: 18px; height: 18px;
-  border: 2.5px solid rgba(10,22,40,.3); border-top-color: var(--bg);
+  border: 2.5px solid rgba(10,22,40,.3); border-top-color: #0a1628;
   border-radius: 50%; animation: spin .6s linear infinite;
-  vertical-align: middle; margin-right: 8px;
 }
 @keyframes spin { to { transform: rotate(360deg); } }
 
-.rate-info { text-align: center; font-size: 12px; color: var(--muted); margin-top: 12px; }
-
-.rescan-btn {
-  width: 100%; padding: 12px; margin-top: 12px;
+.cancel-btn {
+  width: 100%; padding: 14px; margin-top: 10px;
   border-radius: 14px; border: 1px solid var(--border);
-  background: transparent; color: var(--muted); font-size: 14px;
+  background: transparent; color: var(--muted); font-size: 15px;
   font-weight: 500; font-family: inherit; cursor: pointer;
 }
-.rescan-btn:hover { border-color: var(--accent); color: var(--accent); }
+.cancel-btn:hover { border-color: var(--accent); color: var(--accent); }
 
 .error-msg {
   background: rgba(232,139,139,.1); border: 1px solid rgba(232,139,139,.3);
@@ -162,12 +163,31 @@ body {
 }
 .error-msg.show { display: block; }
 
-.success-msg {
-  background: rgba(125,211,168,.1); border: 1px solid rgba(125,211,168,.3);
-  color: var(--ok); border-radius: 12px; padding: 16px;
-  font-size: 16px; text-align: center; font-weight: 600; display: none;
+.success-overlay {
+  display: none; position: fixed; inset: 0;
+  background: rgba(10,22,40,.95); z-index: 100;
+  flex-direction: column; align-items: center; justify-content: center;
 }
-.success-msg.show { display: block; }
+.success-overlay.show { display: flex; }
+.success-overlay .checkmark { font-size: 72px; margin-bottom: 16px; }
+.success-overlay .msg { font-size: 20px; font-weight: 700; color: var(--ok); margin-bottom: 8px; }
+.success-overlay .sub { font-size: 14px; color: var(--muted); }
+
+/* QR error (can't parse) */
+.qr-error-card {
+  background: var(--card); border: 1px solid rgba(232,139,139,.3);
+  border-radius: 20px; padding: 24px 20px; text-align: center;
+  box-shadow: var(--shadow); display: none;
+}
+.qr-error-card.show { display: block; }
+.qr-error-card .icon { font-size: 48px; margin-bottom: 12px; }
+.qr-error-card .title { font-size: 17px; font-weight: 700; color: var(--bad); margin-bottom: 8px; }
+.qr-error-card .desc { font-size: 14px; color: var(--muted); margin-bottom: 16px; line-height: 1.5; }
+.qr-error-card .raw {
+  background: var(--card2); border: 1px solid var(--border);
+  border-radius: 10px; padding: 10px; font-size: 12px; color: var(--muted);
+  word-break: break-all; text-align: left; margin-bottom: 16px; max-height: 80px; overflow: auto;
+}
 
 /* Fallback upload (non-TG browser) */
 .fallback-upload {
@@ -178,10 +198,6 @@ body {
 .fallback-upload input { position: absolute; inset: 0; opacity: 0; cursor: pointer; }
 .fallback-upload .hint { color: var(--muted); font-size: 13px; }
 .fallback-upload .hint b { color: var(--accent); }
-.preview-img {
-  max-width: 100%; max-height: 200px; border-radius: 12px;
-  margin-top: 12px; display: none;
-}
 </style>
 </head>
 <body>
@@ -210,38 +226,50 @@ body {
     <div class="fallback-upload" id="fallbackUpload">
       <div class="hint">Или <b>загрузите фото</b> QR-кода</div>
       <input type="file" id="fileInput" accept="image/*" capture="environment">
-      <img class="preview-img" id="previewImg" alt="">
     </div>
   </div>
 
-  <!-- Step 2: Amount & confirm -->
-  <div class="qr-result" id="qrResult">
-    <div class="qr-data-card">
-      <div class="label">Данные QR-кода</div>
-      <div class="value" id="qrDataText">—</div>
-    </div>
-
-    <div class="amount-row">
-      <div class="field">
-        <label>Сумма (RUB)</label>
-        <input type="number" id="amountRub" placeholder="0" min="0" step="any" inputmode="decimal">
+  <!-- Step 2: Payment confirmation -->
+  <div class="pay-confirm" id="payConfirm">
+    <div class="receipt-card">
+      <div class="receipt-header">
+        <div class="icon">🧾</div>
+        <div class="title">Оплата по QR</div>
       </div>
-      <div class="usdt-display" id="usdtDisplay">0 USDT</div>
+      <div id="receiptRows"></div>
     </div>
-    <div class="insufficient" id="insufficient">Недостаточно средств</div>
 
-    <div class="field">
-      <label>Заметка (необязательно)</label>
-      <textarea id="note" placeholder="Комментарий..." rows="2"></textarea>
+    <div class="amount-big">
+      <div class="rub" id="amountRub">0 <span class="rub-sign">₽</span></div>
+      <div class="usdt" id="amountUsdt">≈ 0 USDT</div>
+      <div class="rate" id="rateInfo"></div>
     </div>
+    <div class="insufficient-big" id="insufficient">⚠️ Недостаточно средств на балансе</div>
 
     <div class="error-msg" id="errorMsg"></div>
-    <div class="success-msg" id="successMsg">Отправлено на проверку!</div>
 
-    <button class="submit-btn" id="submitBtn" disabled>Отправить на оплату</button>
-    <div class="rate-info" id="rateInfo"></div>
+    <button class="confirm-btn" id="confirmBtn" type="button">
+      ✅ Подтвердить оплату
+    </button>
+    <button class="cancel-btn" id="cancelBtn" type="button">Отмена — сканировать другой</button>
+  </div>
 
-    <button class="rescan-btn" id="rescanBtn" type="button">Сканировать другой QR</button>
+  <!-- QR parse error -->
+  <div class="qr-error-card" id="qrError">
+    <div class="icon">⚠️</div>
+    <div class="title">Не удалось распознать QR</div>
+    <div class="desc">Этот QR-код не содержит данных для оплаты.<br>Попробуйте отсканировать другой.</div>
+    <div class="raw" id="qrRawData"></div>
+    <button class="scan-btn" id="retryScanBtn" type="button" style="font-size:15px;padding:14px;">
+      📱 Сканировать ещё раз
+    </button>
+  </div>
+
+  <!-- Success overlay -->
+  <div class="success-overlay" id="successOverlay">
+    <div class="checkmark">✅</div>
+    <div class="msg">Оплата отправлена!</div>
+    <div class="sub">Ожидайте подтверждения администратора</div>
   </div>
 </div>
 
@@ -253,13 +281,10 @@ const $ = id => document.getElementById(id);
 
 let currentRate = null;
 let currentBalance = null;
-let qrData = '';
-let qrImageB64 = '';
+let parsedQr = null;   // { raw, name, bankName, account, bic, sum, purpose, ... }
 
 // ── Telegram WebApp QR Scanner ──
 const tgApp = window.Telegram && window.Telegram.WebApp;
-
-// Detect TG environment: platform !== 'unknown' OR initData exists OR tgWebAppData in URL
 const isInsideTg = !!(tgApp && (
   (tgApp.platform && tgApp.platform !== 'unknown') ||
   (tgApp.initData && tgApp.initData.length > 0) ||
@@ -272,35 +297,14 @@ if (tgApp) {
   try { tgApp.ready(); tgApp.expand(); } catch(_){}
 }
 
-// Debug info (can remove later)
-console.log('[QR] tgApp:', !!tgApp,
-  'platform:', tgApp && tgApp.platform,
-  'initData len:', tgApp && tgApp.initData && tgApp.initData.length,
-  'isInsideTg:', isInsideTg,
-  'hasTgScanner:', hasTgScanner,
-  'showScanQrPopup:', tgApp && typeof tgApp.showScanQrPopup);
-
-// Show fallback only when NOT inside TG, or always as secondary option
 $('fallbackUpload').style.display = isInsideTg ? 'none' : 'block';
 
-$('scanBtn').onclick = () => {
+// ── Scan button ──
+$('scanBtn').onclick = startScan;
+$('retryScanBtn').onclick = () => { resetToScan(); startScan(); };
+
+function startScan() {
   if (hasTgScanner) {
-    try {
-      tgApp.showScanQrPopup({ text: 'Наведите камеру на QR-код' }, (data) => {
-        if (data) {
-          try { tgApp.closeScanQrPopup(); } catch(_){}
-          onQrScanned(data);
-          return true; // close popup
-        }
-      });
-    } catch(e) {
-      console.warn('TG QR scanner error:', e);
-      alert('Ошибка сканера: ' + e.message + '\nПопробуйте загрузить фото.');
-      $('fallbackUpload').style.display = 'block';
-      $('fileInput').click();
-    }
-  } else if (tgApp && typeof tgApp.showScanQrPopup === 'function') {
-    // tgApp exists and has scanner but isInsideTg was false — try anyway
     try {
       tgApp.showScanQrPopup({ text: 'Наведите камеру на QR-код' }, (data) => {
         if (data) {
@@ -310,72 +314,277 @@ $('scanBtn').onclick = () => {
         }
       });
     } catch(e) {
-      console.warn('Fallback TG scanner also failed:', e);
+      console.warn('TG QR scanner error:', e);
+      $('fileInput').click();
+    }
+  } else if (tgApp && typeof tgApp.showScanQrPopup === 'function') {
+    try {
+      tgApp.showScanQrPopup({ text: 'Наведите камеру на QR-код' }, (data) => {
+        if (data) {
+          try { tgApp.closeScanQrPopup(); } catch(_){}
+          onQrScanned(data);
+          return true;
+        }
+      });
+    } catch(e) {
       $('fileInput').click();
     }
   } else {
     $('fileInput').click();
   }
-};
+}
 
-// Fallback: file upload
+// Fallback: file upload with jsQR decoding
 $('fileInput').addEventListener('change', function(e) {
   const file = e.target.files[0];
   if (!file) return;
   const reader = new FileReader();
   reader.onload = (ev) => {
-    const dataUrl = ev.target.result;
-    $('previewImg').src = dataUrl;
-    $('previewImg').style.display = 'block';
-
-    // Extract base64
-    qrImageB64 = dataUrl.split(',')[1] || '';
-    // For fallback, we can't decode QR on client easily, so use "uploaded image" flow
-    onQrScanned('QR_FROM_IMAGE');
+    const img = new Image();
+    img.onload = () => {
+      // Try decode with canvas
+      const canvas = document.createElement('canvas');
+      canvas.width = img.width;
+      canvas.height = img.height;
+      const ctx = canvas.getContext('2d');
+      ctx.drawImage(img, 0, 0);
+      // We can't easily decode QR without library, so send as image
+      const dataUrl = ev.target.result;
+      const b64 = dataUrl.split(',')[1] || '';
+      onQrScanned('QR_FROM_IMAGE:' + b64);
+    };
+    img.src = ev.target.result;
   };
   reader.readAsDataURL(file);
 });
 
-function onQrScanned(data) {
-  qrData = data;
-  $('qrDataText').textContent = data.length > 200 ? data.slice(0, 200) + '...' : data;
+// ── Parse QR data ──
+function parseQrData(raw) {
+  const result = { raw, fields: {} };
 
-  // Try to parse amount from QR (bank QR codes often have amount in them)
-  const parsedAmount = parseAmountFromQr(data);
-  if (parsedAmount > 0) {
-    $('amountRub').value = parsedAmount;
-    calcUsdt();
+  // Russian bank QR format: ST00011 or ST00012
+  // Fields separated by | : Name=...|PersonalAcc=...|BankName=...|BIC=...|Sum=...|Purpose=...
+  if (/^ST0001[12]/i.test(raw)) {
+    const parts = raw.split('|');
+    for (const part of parts) {
+      const eq = part.indexOf('=');
+      if (eq > 0) {
+        const key = part.substring(0, eq).trim();
+        const val = part.substring(eq + 1).trim();
+        result.fields[key.toLowerCase()] = val;
+      }
+    }
+    result.name = result.fields['name'] || result.fields['payeename'] || '';
+    result.bankName = result.fields['bankname'] || '';
+    result.account = result.fields['personalacc'] || '';
+    result.bic = result.fields['bic'] || '';
+    result.purpose = result.fields['purpose'] || '';
+    result.inn = result.fields['payeeinn'] || result.fields['inn'] || '';
+    result.kpp = result.fields['kpp'] || '';
+
+    // Sum is in kopecks in ST00012
+    const sumRaw = result.fields['sum'] || '0';
+    const sumNum = parseInt(sumRaw, 10);
+    if (sumNum > 0) {
+      result.sum = sumNum / 100; // kopecks → rubles
+    } else {
+      result.sum = 0;
+    }
+
+    result.isBank = true;
+    return result;
   }
 
-  // Show result section, hide scan section
+  // Try generic URL with amount params
+  // e.g. https://qr.nspk.ru/...?sum=10000&cur=RUB&...
+  try {
+    const url = new URL(raw);
+    const sumParam = url.searchParams.get('sum') || url.searchParams.get('amount');
+    if (sumParam) {
+      result.sum = parseFloat(sumParam) / 100; // usually kopecks
+      if (result.sum < 1) result.sum = parseFloat(sumParam); // fallback: maybe already rubles
+    }
+    result.name = url.searchParams.get('name') || url.searchParams.get('payee') || '';
+    result.purpose = url.searchParams.get('purpose') || url.searchParams.get('description') || '';
+    result.isBank = !!(result.sum && result.sum > 0);
+    return result;
+  } catch(_) {}
+
+  // СБП (SBP) QR: https://qr.nspk.ru/...
+  if (raw.includes('qr.nspk.ru')) {
+    // NSPK QR codes — the amount might be embedded differently
+    const mSum = raw.match(/[?&]sum=(\d+)/i);
+    if (mSum) result.sum = parseInt(mSum[1], 10) / 100;
+    result.isBank = true;
+    return result;
+  }
+
+  // Simple text: Sum=1234
+  const mSum = raw.match(/Sum=(\d+\.?\d*)/i);
+  if (mSum) {
+    result.sum = parseFloat(mSum[1]);
+    if (result.sum > 10000) result.sum = result.sum / 100; // likely kopecks
+    result.isBank = true;
+  }
+
+  const mAmt = raw.match(/amount[=:](\d+\.?\d*)/i);
+  if (mAmt) {
+    result.sum = parseFloat(mAmt[1]);
+    result.isBank = true;
+  }
+
+  return result;
+}
+
+// ── On QR scanned ──
+function onQrScanned(data) {
+  // If it's from image upload, we can't decode — send to server
+  if (data.startsWith('QR_FROM_IMAGE:')) {
+    // For image uploads, we need server-side decoding or jsQR
+    // For now, show error that native scan is preferred
+    showQrError(data, 'Используйте сканер камеры для распознавания QR-кода.');
+    return;
+  }
+
+  parsedQr = parseQrData(data);
+
+  if (!parsedQr.sum || parsedQr.sum <= 0) {
+    showQrError(data, null);
+    return;
+  }
+
+  showPayConfirmation();
+}
+
+function showQrError(raw, customMsg) {
   $('scanSection').style.display = 'none';
-  $('qrResult').classList.add('show');
-  validateForm();
+  $('payConfirm').classList.remove('show');
+  $('qrError').classList.add('show');
+  if (customMsg) {
+    $('qrError').querySelector('.desc').innerHTML = customMsg + '<br>Попробуйте отсканировать другой.';
+  }
+  $('qrRawData').textContent = raw.length > 300 ? raw.slice(0, 300) + '...' : raw;
 }
 
-function parseAmountFromQr(data) {
-  // Russian bank QR (ST00012) format: Sum=1234.56
-  const mSum = data.match(/Sum=(\d+\.?\d*)/i);
-  if (mSum) return parseFloat(mSum[1]);
-  // Generic amount patterns
-  const mAmt = data.match(/amount[=:](\d+\.?\d*)/i);
-  if (mAmt) return parseFloat(mAmt[1]);
-  return 0;
+function showPayConfirmation() {
+  $('scanSection').style.display = 'none';
+  $('qrError').classList.remove('show');
+
+  // Build receipt rows
+  const rows = [];
+  if (parsedQr.name) rows.push(['Получатель', parsedQr.name]);
+  if (parsedQr.bankName) rows.push(['Банк', parsedQr.bankName]);
+  if (parsedQr.inn) rows.push(['ИНН', parsedQr.inn]);
+  if (parsedQr.account) rows.push(['Счёт', maskAccount(parsedQr.account)]);
+  if (parsedQr.purpose) rows.push(['Назначение', parsedQr.purpose]);
+  if (!rows.length) rows.push(['QR данные', parsedQr.raw.length > 100 ? parsedQr.raw.slice(0, 100) + '...' : parsedQr.raw]);
+
+  const container = $('receiptRows');
+  container.innerHTML = '';
+  for (const [label, val] of rows) {
+    const row = document.createElement('div');
+    row.className = 'receipt-row';
+    row.innerHTML = '<div class="label">' + escHtml(label) + '</div><div class="val">' + escHtml(val) + '</div>';
+    container.appendChild(row);
+  }
+
+  // Amount display
+  const rub = parsedQr.sum;
+  $('amountRub').innerHTML = formatNum(rub) + ' <span class="rub-sign">₽</span>';
+
+  if (currentRate && currentRate > 0) {
+    const usdt = rub / currentRate;
+    $('amountUsdt').textContent = '≈ ' + usdt.toFixed(2) + ' USDT';
+    $('rateInfo').textContent = '1 USDT ≈ ' + currentRate.toFixed(2) + ' ₽';
+
+    if (currentBalance !== null && usdt > currentBalance) {
+      $('insufficient').classList.add('show');
+      $('confirmBtn').disabled = true;
+    } else {
+      $('insufficient').classList.remove('show');
+      $('confirmBtn').disabled = false;
+    }
+  } else {
+    $('amountUsdt').textContent = 'Загрузка курса...';
+    $('confirmBtn').disabled = true;
+    // Retry loading rate
+    loadRate().then(() => {
+      if (currentRate > 0) showPayConfirmation();
+    });
+  }
+
+  $('payConfirm').classList.add('show');
 }
 
-// Rescan
-$('rescanBtn').onclick = () => {
+function maskAccount(acc) {
+  if (acc.length <= 6) return acc;
+  return acc.slice(0, 3) + '****' + acc.slice(-3);
+}
+
+function formatNum(n) {
+  return n.toLocaleString('ru-RU', { minimumFractionDigits: 0, maximumFractionDigits: 2 });
+}
+
+function escHtml(s) {
+  const d = document.createElement('div');
+  d.textContent = s;
+  return d.innerHTML;
+}
+
+// ── Cancel / rescan ──
+$('cancelBtn').onclick = resetToScan;
+
+function resetToScan() {
   $('scanSection').style.display = '';
-  $('qrResult').classList.remove('show');
+  $('payConfirm').classList.remove('show');
+  $('qrError').classList.remove('show');
   $('errorMsg').classList.remove('show');
-  $('successMsg').classList.remove('show');
-  $('submitBtn').style.display = '';
-  $('submitBtn').disabled = true;
-  $('amountRub').value = '';
-  $('usdtDisplay').textContent = '0 USDT';
   $('insufficient').classList.remove('show');
-  qrData = '';
-  qrImageB64 = '';
+  $('confirmBtn').disabled = false;
+  $('confirmBtn').innerHTML = '✅ Подтвердить оплату';
+  parsedQr = null;
+}
+
+// ── Confirm payment ──
+$('confirmBtn').onclick = async () => {
+  if (!parsedQr || !parsedQr.sum) return;
+
+  const btn = $('confirmBtn');
+  $('errorMsg').classList.remove('show');
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spinner"></span> Отправка...';
+
+  try {
+    const res = await fetch(BASE + '/api/qr/submit', {
+      method: 'POST',
+      headers: { ...headers, 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        qrData: parsedQr.raw,
+        amountRub: parsedQr.sum,
+        recipient: parsedQr.name || '',
+        bankName: parsedQr.bankName || '',
+        account: parsedQr.account || '',
+        bic: parsedQr.bic || '',
+        inn: parsedQr.inn || '',
+        purpose: parsedQr.purpose || '',
+        note: '',
+      })
+    });
+
+    if (!res.ok) {
+      const d = await res.json().catch(() => ({}));
+      throw new Error(d.error || 'Ошибка отправки');
+    }
+
+    // Success!
+    $('successOverlay').classList.add('show');
+    setTimeout(() => { window.location.href = 'history.html'; }, 2500);
+  } catch (e) {
+    $('errorMsg').textContent = e.message;
+    $('errorMsg').classList.add('show');
+    btn.disabled = false;
+    btn.innerHTML = '✅ Подтвердить оплату';
+  }
 };
 
 // ── Load balance + rate ──
@@ -396,84 +605,7 @@ async function loadRate() {
     const res = await fetch(BASE + '/api/rate', { headers });
     const data = await res.json();
     currentRate = parseFloat(data.rate || 0);
-    if (currentRate > 0) $('rateInfo').textContent = '1 USDT ≈ ' + currentRate.toFixed(2) + ' RUB';
   } catch {}
-}
-
-// ── Amount calc ──
-$('amountRub').addEventListener('input', () => {
-  clearTimeout($('amountRub')._t);
-  $('amountRub')._t = setTimeout(calcUsdt, 200);
-  validateForm();
-});
-
-function calcUsdt() {
-  const rub = parseFloat($('amountRub').value);
-  if (!rub || !currentRate) {
-    $('usdtDisplay').textContent = '0 USDT';
-    $('insufficient').classList.remove('show');
-    return;
-  }
-  const usdt = rub / currentRate;
-  $('usdtDisplay').textContent = usdt.toFixed(2) + ' USDT';
-  if (currentBalance !== null && usdt > currentBalance) {
-    $('insufficient').classList.add('show');
-  } else {
-    $('insufficient').classList.remove('show');
-  }
-}
-
-function validateForm() {
-  const hasQr = !!qrData;
-  const hasAmount = parseFloat($('amountRub').value) > 0;
-  $('submitBtn').disabled = !(hasQr && hasAmount);
-}
-
-// ── Submit ──
-$('submitBtn').onclick = async () => {
-  const btn = $('submitBtn');
-  $('errorMsg').classList.remove('show');
-  $('successMsg').classList.remove('show');
-
-  const amountRub = parseFloat($('amountRub').value);
-  if (!amountRub || amountRub <= 0) { showError('Введите сумму'); return; }
-
-  btn.disabled = true;
-  btn.innerHTML = '<span class="spinner"></span>Отправка...';
-
-  try {
-    // Submit QR data + amount to worker
-    const res = await fetch(BASE + '/api/qr/submit', {
-      method: 'POST',
-      headers: { ...headers, 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        qrData,
-        amountRub,
-        note: $('note').value || '',
-        image: qrImageB64 || '',
-      })
-    });
-
-    if (!res.ok) {
-      const d = await res.json().catch(() => ({}));
-      throw new Error(d.error || 'Ошибка отправки');
-    }
-
-    $('successMsg').classList.add('show');
-    btn.style.display = 'none';
-    $('rescanBtn').style.display = 'none';
-
-    setTimeout(() => { window.location.href = 'history.html'; }, 2000);
-  } catch (e) {
-    showError(e.message);
-    btn.disabled = false;
-    btn.innerHTML = 'Отправить на оплату';
-  }
-};
-
-function showError(msg) {
-  $('errorMsg').textContent = msg;
-  $('errorMsg').classList.add('show');
 }
 
 loadBalance();
