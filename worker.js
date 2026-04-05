@@ -475,6 +475,7 @@ async function handleMe(req, env) {
       photoUrl: user.photoUrl || "",
       balance: microToUsdt(user.balanceMicro || 0),
       banned: !!user.banned,
+      createdAt: user.createdAt || 0,
     },
     rate,
   });

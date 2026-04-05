@@ -668,7 +668,7 @@ body {
     currentUser = user;
     currentRate = data.rate || null;
 
-    var name = user.first_name || user.username || 'User';
+    var name = user.firstName || user.first_name || user.username || 'User';
 
     // Try to get photo
     userPhotoUrl = user.photoUrl || user.photo_url || null;
@@ -725,30 +725,34 @@ body {
         headers: { 'Authorization': 'Bearer ' + token }
       });
 
-      var stats = {};
+      var data = {};
       if (resp.ok) {
-        stats = await resp.json();
+        data = await resp.json();
       }
+      var s = data.stats || data || {};
 
       var user = currentUser;
-      var name = user.first_name || user.username || 'User';
+      var name = user.firstName || user.first_name || user.username || 'User';
       var username = user.username ? ('@' + user.username) : 'Нет username';
-      var regDate = user.created_at || user.registered_at || '';
+      var regDate = s.createdAt || user.createdAt || 0;
       var formattedDate = '';
       if (regDate) {
         try {
           formattedDate = new Date(regDate).toLocaleDateString('ru-RU', {
             day: 'numeric', month: 'long', year: 'numeric'
           });
-        } catch(e) { formattedDate = regDate; }
+        } catch(e) { formattedDate = ''; }
       }
 
-      var qrCount = stats.qr_payments_count || stats.qrCount || 0;
-      var qrSum = stats.qr_payments_sum || stats.qrSum || 0;
-      var depCount = stats.deposits_count || stats.depositsCount || 0;
-      var depSum = stats.deposits_sum || stats.depositsSum || 0;
-      var wdCount = stats.withdrawals_count || stats.withdrawalsCount || 0;
-      var wdSum = stats.withdrawals_sum || stats.withdrawalsSum || 0;
+      var qp = s.qrPayments || {};
+      var dp = s.deposits || {};
+      var wd = s.withdrawals || {};
+      var qrCount = qp.count || 0;
+      var qrSum = qp.sumUsdt || 0;
+      var depCount = dp.count || 0;
+      var depSum = dp.sumUsdt || 0;
+      var wdCount = wd.count || 0;
+      var wdSum = wd.sumUsdt || 0;
 
       var avatarHtml;
       if (userPhotoUrl) {
@@ -769,7 +773,7 @@ body {
         '<div class="stats-grid">' +
           '<div class="stats-row">' +
             '<div class="stats-row-label"><span class="stats-row-label-icon">📱</span> QR-платежи</div>' +
-            '<div class="stats-row-value">' + qrCount + ' / ' + formatNumber(qrSum, 2) + ' RUB</div>' +
+            '<div class="stats-row-value">' + qrCount + ' / ' + formatNumber(qrSum, 2) + ' USDT</div>' +
           '</div>' +
           '<div class="stats-row">' +
             '<div class="stats-row-label"><span class="stats-row-label-icon">💰</span> Пополнения</div>' +
@@ -795,11 +799,17 @@ body {
 
   // Init
   autoAuth().then(function(data) {
-    if (data) {
+    if (data && data.user) {
       showApp(data);
+    } else if (data && data.ok === false) {
+      // Auth returned error
+      showNotTg();
     } else {
       showNotTg();
     }
+  }).catch(function(e) {
+    console.error('Auth error:', e);
+    showNotTg();
   });
 })();
 </script>
