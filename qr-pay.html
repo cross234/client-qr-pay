@@ -259,16 +259,29 @@ let qrImageB64 = '';
 // ── Telegram WebApp QR Scanner ──
 const tgApp = window.Telegram && window.Telegram.WebApp;
 
-// Check if we're REALLY inside Telegram WebApp (not just the JS loaded)
-const isInsideTg = !!(tgApp && tgApp.initData && tgApp.initData.length > 0);
-const hasTgScanner = isInsideTg && typeof tgApp.showScanQrPopup === 'function';
+// Detect TG environment: platform !== 'unknown' OR initData exists OR tgWebAppData in URL
+const isInsideTg = !!(tgApp && (
+  (tgApp.platform && tgApp.platform !== 'unknown') ||
+  (tgApp.initData && tgApp.initData.length > 0) ||
+  window.location.hash.includes('tgWebAppData') ||
+  window.location.search.includes('tgWebAppData')
+));
+const hasTgScanner = !!(isInsideTg && tgApp && typeof tgApp.showScanQrPopup === 'function');
 
-if (tgApp && isInsideTg) {
+if (tgApp) {
   try { tgApp.ready(); tgApp.expand(); } catch(_){}
 }
 
-// Always show fallback file upload as an option
-$('fallbackUpload').style.display = 'block';
+// Debug info (can remove later)
+console.log('[QR] tgApp:', !!tgApp,
+  'platform:', tgApp && tgApp.platform,
+  'initData len:', tgApp && tgApp.initData && tgApp.initData.length,
+  'isInsideTg:', isInsideTg,
+  'hasTgScanner:', hasTgScanner,
+  'showScanQrPopup:', tgApp && typeof tgApp.showScanQrPopup);
+
+// Show fallback only when NOT inside TG, or always as secondary option
+$('fallbackUpload').style.display = isInsideTg ? 'none' : 'block';
 
 $('scanBtn').onclick = () => {
   if (hasTgScanner) {
@@ -281,12 +294,26 @@ $('scanBtn').onclick = () => {
         }
       });
     } catch(e) {
-      // TG scanner failed — fall back to file
       console.warn('TG QR scanner error:', e);
+      alert('Ошибка сканера: ' + e.message + '\nПопробуйте загрузить фото.');
+      $('fallbackUpload').style.display = 'block';
+      $('fileInput').click();
+    }
+  } else if (tgApp && typeof tgApp.showScanQrPopup === 'function') {
+    // tgApp exists and has scanner but isInsideTg was false — try anyway
+    try {
+      tgApp.showScanQrPopup({ text: 'Наведите камеру на QR-код' }, (data) => {
+        if (data) {
+          try { tgApp.closeScanQrPopup(); } catch(_){}
+          onQrScanned(data);
+          return true;
+        }
+      });
+    } catch(e) {
+      console.warn('Fallback TG scanner also failed:', e);
       $('fileInput').click();
     }
   } else {
-    // Not in TG or old version — open file picker (camera/gallery)
     $('fileInput').click();
   }
 };
