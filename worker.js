@@ -154,6 +154,24 @@ async function getRate(env) {
   return _rateCache.rate > 0 ? applyMarkup(_rateCache.rate, pct) : 0;
 }
 
+// ── TG WebApp initData validation ────────────────────────────
+async function validateTgInitData(initData, botToken) {
+  const params = new URLSearchParams(initData);
+  const hash = params.get('hash');
+  params.delete('hash');
+  const entries = [...params.entries()].sort((a,b) => a[0].localeCompare(b[0]));
+  const dataCheckString = entries.map(([k,v]) => k + '=' + v).join('\n');
+
+  const encoder = new TextEncoder();
+  const secretKey = await crypto.subtle.importKey('raw', encoder.encode('WebAppData'), { name: 'HMAC', hash: 'SHA-256' }, false, ['sign']);
+  const secret = await crypto.subtle.sign('HMAC', secretKey, encoder.encode(botToken));
+  const key = await crypto.subtle.importKey('raw', secret, { name: 'HMAC', hash: 'SHA-256' }, false, ['sign']);
+  const sig = await crypto.subtle.sign('HMAC', key, encoder.encode(dataCheckString));
+
+  const hexHash = [...new Uint8Array(sig)].map(b => b.toString(16).padStart(2, '0')).join('');
+  return hexHash === hash;
+}
+
 // ── Auth helpers ─────────────────────────────────────────────
 async function getUser(env, tgId) {
   return kvGet(env, `u:${tgId}`);
@@ -250,6 +268,7 @@ async function handleBotWebhook(req, env) {
         username,
         firstName: from.first_name || "",
         lastName: from.last_name || "",
+        photoUrl: "",
         balanceMicro: 0,
         createdAt: now(),
         updatedAt: now(),
@@ -257,22 +276,37 @@ async function handleBotWebhook(req, env) {
       };
       await saveUser(env, user);
     } else {
-      // update username
-      if (username && user.username !== username) {
-        user.username = username;
+      // update username and other fields
+      let changed = false;
+      if (username && user.username !== username) { user.username = username; changed = true; }
+      if (from.first_name && user.firstName !== from.first_name) { user.firstName = from.first_name; changed = true; }
+      if (from.last_name && user.lastName !== from.last_name) { user.lastName = from.last_name; changed = true; }
+      if (changed) {
         user.updatedAt = now();
         await saveUser(env, user);
       }
     }
 
     const cfg = await getSettings(env);
+
+    // Set menu button for this chat
+    await tg(env, "setChatMenuButton", {
+      chat_id: chatId,
+      menu_button: {
+        type: "web_app",
+        text: "Moon Wallet",
+        web_app: { url: "https://cross234.github.io/client-qr-pay/" }
+      }
+    });
+
+    const webAppUrl = "https://cross234.github.io/client-qr-pay/";
     await tgSend(env, chatId,
-      `👋 Добро пожаловать в <b>${cfg.siteName || "QR Pay"}</b>!\n\n` +
-      `Ваш аккаунт создан. Для входа в приложение используйте команду /login.`,
+      `🌙 Добро пожаловать в <b>Moon Wallet</b>!\n\n` +
+      `Ваш кошелёк готов. Нажмите кнопку ниже или используйте меню для входа.`,
       {
         reply_markup: {
           inline_keyboard: [[
-            { text: "📱 Открыть приложение", web_app: { url: cfg.webAppUrl || "https://example.com" } }
+            { text: "🌙 Открыть Moon Wallet", web_app: { url: webAppUrl } }
           ]]
         }
       }
@@ -351,6 +385,82 @@ async function handleVerifyCode(req, env) {
   });
 }
 
+// ── Auth: Telegram WebApp ────────────────────────────────────
+async function handleTelegramAuth(req, env) {
+  const body = await req.json().catch(() => ({}));
+  const initData = String(body.initData || "");
+  if (!initData) return bad("initData required");
+
+  const botToken = env.BOT_TOKEN || "";
+  if (!botToken) return bad("Bot token not configured", 500);
+
+  const valid = await validateTgInitData(initData, botToken);
+  if (!valid) return bad("Invalid initData", 401);
+
+  // Parse user from initData
+  const params = new URLSearchParams(initData);
+  const userJson = params.get("user");
+  if (!userJson) return bad("No user in initData", 400);
+
+  let tgUser;
+  try { tgUser = JSON.parse(userJson); } catch { return bad("Invalid user JSON", 400); }
+
+  const tgId = String(tgUser.id || "");
+  if (!tgId) return bad("No user id", 400);
+
+  const username = String(tgUser.username || "").toLowerCase();
+  const firstName = tgUser.first_name || "";
+  const lastName = tgUser.last_name || "";
+  const photoUrl = tgUser.photo_url || "";
+
+  // Auto-create user if not exists
+  let user = await getUser(env, tgId);
+  if (!user) {
+    user = {
+      tgId,
+      username,
+      firstName,
+      lastName,
+      photoUrl,
+      balanceMicro: 0,
+      createdAt: now(),
+      updatedAt: now(),
+      banned: false,
+    };
+    await saveUser(env, user);
+  } else {
+    // Update fields from Telegram
+    let changed = false;
+    if (username && user.username !== username) { user.username = username; changed = true; }
+    if (firstName && user.firstName !== firstName) { user.firstName = firstName; changed = true; }
+    if (lastName && user.lastName !== lastName) { user.lastName = lastName; changed = true; }
+    if (photoUrl && user.photoUrl !== photoUrl) { user.photoUrl = photoUrl; changed = true; }
+    if (changed) {
+      user.updatedAt = now();
+      await saveUser(env, user);
+    }
+  }
+
+  // Create session token
+  const token = uid() + uid();
+  await kvPut(env, `sess:${token}`, String(tgId), { expirationTtl: 86400 * 30 });
+
+  const rate = await getRate(env);
+  return json({
+    ok: true,
+    token,
+    user: {
+      tgId: user.tgId,
+      username: user.username,
+      firstName: user.firstName,
+      lastName: user.lastName || "",
+      photoUrl: user.photoUrl || "",
+      balance: microToUsdt(user.balanceMicro || 0),
+    },
+    rate,
+  });
+}
+
 // ── User profile ─────────────────────────────────────────────
 async function handleMe(req, env) {
   const [user, err] = await requireUser(req, env);
@@ -362,6 +472,7 @@ async function handleMe(req, env) {
       tgId: user.tgId,
       username: user.username,
       firstName: user.firstName,
+      photoUrl: user.photoUrl || "",
       balance: microToUsdt(user.balanceMicro || 0),
       banned: !!user.banned,
     },
@@ -871,6 +982,61 @@ async function handleAdminSaveSettings(req, env) {
   return json({ ok: true, settings: updated });
 }
 
+// ── User: Stats ─────────────────────────────────────────────
+async function handleUserStats(req, env) {
+  const [user, err] = await requireUser(req, env);
+  if (err) return err;
+
+  const tgId = String(user.tgId);
+
+  // QR payments
+  const qrKeys = await kvList(env, "qr:");
+  let qrCount = 0, qrSum = 0;
+  for (const key of qrKeys) {
+    if (key.startsWith("qr_img:")) continue;
+    const r = await kvGet(env, key);
+    if (r && String(r.tgId) === tgId) {
+      qrCount++;
+      if (r.status === "PAID") qrSum += Number(r.amountUsdt || 0);
+    }
+  }
+
+  // Deposits
+  const depKeys = await kvList(env, "dep:");
+  let depCount = 0, depSum = 0;
+  for (const key of depKeys) {
+    const r = await kvGet(env, key);
+    if (r && String(r.tgId) === tgId) {
+      depCount++;
+      depSum += Number(r.amountUsdt || 0);
+    }
+  }
+
+  // Withdrawals
+  const wdKeys = await kvList(env, "wd:");
+  let wdCount = 0, wdSum = 0;
+  for (const key of wdKeys) {
+    const r = await kvGet(env, key);
+    if (r && String(r.tgId) === tgId) {
+      wdCount++;
+      wdSum += Number(r.amountUsdt || 0);
+    }
+  }
+
+  return json({
+    ok: true,
+    stats: {
+      qrPayments: { count: qrCount, sumUsdt: Math.round(qrSum * 1e6) / 1e6 },
+      deposits: { count: depCount, sumUsdt: Math.round(depSum * 1e6) / 1e6 },
+      withdrawals: { count: wdCount, sumUsdt: Math.round(wdSum * 1e6) / 1e6 },
+      createdAt: user.createdAt || 0,
+      username: user.username || "",
+      firstName: user.firstName || "",
+      photoUrl: user.photoUrl || "",
+    }
+  });
+}
+
 // ── Admin: Stats (overview) ─────────────────────────────────
 async function handleAdminStats(req, env) {
   const [cfg, err] = await requireAdmin(req, env);
@@ -931,6 +1097,8 @@ async function handleRequest(request, env, ctx) {
       return await handleBotWebhook(request, env);
 
     // Auth
+    if (path === "/api/auth/telegram" && method === "POST")
+      return await handleTelegramAuth(request, env);
     if (path === "/api/request_code" && method === "POST")
       return await handleRequestCode(request, env);
     if (path === "/api/verify_code" && method === "POST")
@@ -941,6 +1109,8 @@ async function handleRequest(request, env, ctx) {
       return await handleMe(request, env);
     if (path === "/api/rate" && method === "GET")
       return await handleGetRate(request, env);
+    if (path === "/api/user/stats" && method === "GET")
+      return await handleUserStats(request, env);
 
     // QR
     if (path === "/api/qr/submit" && method === "POST")

@@ -46,35 +46,19 @@ body {
   padding-bottom: 40px;
 }
 
-/* Header */
+/* Header with logo */
 .header {
   display: flex;
   align-items: center;
-  justify-content: space-between;
+  gap: 12px;
   margin-bottom: 24px;
   padding: 4px 0;
 }
 
-.header-left {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-}
-
-.header-logo {
-  width: 42px;
-  height: 42px;
-  background: linear-gradient(135deg, var(--accent), var(--accent2));
-  border-radius: 13px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  flex-shrink: 0;
-}
-
 .header-logo svg {
-  width: 22px;
-  height: 22px;
+  width: 38px;
+  height: 38px;
+  flex-shrink: 0;
 }
 
 .header-title {
@@ -83,41 +67,100 @@ body {
   letter-spacing: -0.3px;
 }
 
-.header-greeting {
-  color: var(--muted);
-  font-size: 13px;
+/* Profile section */
+.profile-section {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 14px 16px;
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  margin-bottom: 20px;
+  cursor: pointer;
+  transition: all 0.25s ease;
+  -webkit-tap-highlight-color: transparent;
 }
 
-.header-avatar {
-  width: 40px;
-  height: 40px;
-  border-radius: 13px;
+.profile-section:hover {
+  border-color: var(--accent2);
   background: var(--card2);
-  border: 1px solid var(--border);
+}
+
+.profile-section:active {
+  transform: scale(0.98);
+}
+
+.profile-avatar {
+  width: 46px;
+  height: 46px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, var(--accent), var(--accent2));
   display: flex;
   align-items: center;
   justify-content: center;
-  color: var(--accent);
+  color: var(--bg);
   font-weight: 700;
-  font-size: 16px;
-  cursor: pointer;
-  transition: all 0.2s ease;
+  font-size: 18px;
+  flex-shrink: 0;
+  overflow: hidden;
 }
 
-.header-avatar:hover {
-  border-color: var(--accent);
+.profile-avatar img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  border-radius: 50%;
+}
+
+.profile-name {
+  font-size: 16px;
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.profile-hint {
+  font-size: 12px;
+  color: var(--muted);
+  margin-top: 2px;
+}
+
+.profile-arrow {
+  margin-left: auto;
+  color: var(--muted);
+  font-size: 18px;
+  flex-shrink: 0;
+  transition: transform 0.2s;
 }
 
 /* Balance card */
 .balance-card {
+  display: block;
+  text-decoration: none;
+  color: inherit;
   background: linear-gradient(145deg, var(--card), var(--card2));
   border: 1px solid var(--border);
   border-radius: 20px;
   padding: 28px 24px;
-  margin-bottom: 24px;
+  margin-bottom: 20px;
   box-shadow: var(--shadow);
   position: relative;
   overflow: hidden;
+  cursor: pointer;
+  transition: all 0.25s ease;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.balance-card:hover {
+  border-color: var(--accent2);
+  box-shadow: 0 16px 40px rgba(0,0,0,.5);
+}
+
+.balance-card:active {
+  transform: scale(0.98);
+  box-shadow: 0 8px 20px rgba(0,0,0,.4);
 }
 
 .balance-card::before {
@@ -129,6 +172,13 @@ body {
   height: 120px;
   background: radial-gradient(circle, rgba(232, 213, 183, 0.06) 0%, transparent 70%);
   border-radius: 50%;
+  pointer-events: none;
+}
+
+.balance-top {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
 }
 
 .balance-label {
@@ -138,6 +188,16 @@ body {
   text-transform: uppercase;
   letter-spacing: 1px;
   margin-bottom: 8px;
+}
+
+.balance-arrow {
+  color: var(--muted);
+  font-size: 22px;
+  transition: transform 0.2s;
+}
+
+.balance-card:hover .balance-arrow {
+  transform: translateX(3px);
 }
 
 .balance-amount {
@@ -155,13 +215,21 @@ body {
   margin-left: 6px;
 }
 
+.balance-rub {
+  color: var(--muted);
+  font-size: 16px;
+  font-weight: 500;
+  margin-top: 6px;
+}
+
 .balance-rate {
   color: var(--muted);
-  font-size: 13px;
-  margin-top: 10px;
+  font-size: 12px;
+  margin-top: 12px;
   display: flex;
   align-items: center;
   gap: 6px;
+  opacity: 0.7;
 }
 
 .rate-dot {
@@ -172,148 +240,42 @@ body {
   display: inline-block;
 }
 
-/* Quick actions */
-.section-title {
-  font-size: 16px;
-  font-weight: 700;
-  margin-bottom: 14px;
-  color: var(--text);
-}
-
-.actions-grid {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 12px;
-  margin-bottom: 28px;
-}
-
-.action-card {
-  background: var(--card);
-  border: 1px solid var(--border);
-  border-radius: 16px;
-  padding: 20px 16px;
-  text-decoration: none;
-  color: var(--text);
-  transition: all 0.3s ease;
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-  cursor: pointer;
-}
-
-.action-card:hover {
-  border-color: var(--accent2);
-  transform: translateY(-2px);
-  box-shadow: 0 8px 24px rgba(0,0,0,0.3);
-}
-
-.action-card:active {
-  transform: translateY(0);
-}
-
-.action-icon {
-  font-size: 28px;
-  line-height: 1;
-}
-
-.action-label {
-  font-size: 14px;
-  font-weight: 600;
-}
-
-.action-desc {
-  font-size: 12px;
-  color: var(--muted);
-  line-height: 1.3;
-}
-
-/* Recent payments */
-.recent-section {
-  margin-top: 4px;
-}
-
-.recent-list {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-}
-
-.recent-item {
-  background: var(--card);
-  border: 1px solid var(--border);
-  border-radius: 16px;
-  padding: 16px 18px;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  transition: all 0.2s ease;
-}
-
-.recent-item:hover {
-  border-color: var(--border);
-  background: var(--card2);
-}
-
-.recent-left {
-  display: flex;
-  align-items: center;
-  gap: 14px;
-  min-width: 0;
-}
-
-.recent-icon {
-  width: 40px;
-  height: 40px;
-  border-radius: 12px;
-  background: rgba(232, 213, 183, 0.08);
+/* QR Button */
+.qr-button {
   display: flex;
   align-items: center;
   justify-content: center;
-  flex-shrink: 0;
-  font-size: 18px;
-}
-
-.recent-info {
-  min-width: 0;
-}
-
-.recent-name {
-  font-size: 14px;
-  font-weight: 600;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-.recent-date {
-  font-size: 12px;
-  color: var(--muted);
-  margin-top: 2px;
-}
-
-.recent-amount {
-  font-size: 15px;
-  font-weight: 700;
-  white-space: nowrap;
-  padding-left: 12px;
-}
-
-.recent-amount.negative {
-  color: var(--bad);
-}
-
-.recent-amount.positive {
-  color: var(--ok);
-}
-
-.empty-state {
-  text-align: center;
-  padding: 32px 16px;
-  color: var(--muted);
-  font-size: 14px;
-  background: var(--card);
-  border: 1px solid var(--border);
+  gap: 12px;
+  width: 100%;
+  padding: 18px 24px;
+  background: linear-gradient(135deg, var(--accent), var(--accent2));
+  color: var(--bg);
+  border: none;
   border-radius: 16px;
+  font-size: 17px;
+  font-weight: 700;
+  font-family: inherit;
+  cursor: pointer;
+  text-decoration: none;
+  transition: all 0.25s ease;
+  box-shadow: 0 6px 24px rgba(232, 213, 183, 0.2);
+  -webkit-tap-highlight-color: transparent;
+}
+
+.qr-button:hover {
+  box-shadow: 0 8px 32px rgba(232, 213, 183, 0.3);
+  transform: translateY(-1px);
+}
+
+.qr-button:active {
+  transform: translateY(1px) scale(0.98);
+  box-shadow: 0 4px 16px rgba(232, 213, 183, 0.15);
+}
+
+.qr-button svg {
+  width: 24px;
+  height: 24px;
+  flex-shrink: 0;
 }
 
 /* Loading skeleton */
@@ -329,263 +291,352 @@ body {
   100% { background-position: -200% 0; }
 }
 
-.balance-skeleton {
-  height: 44px;
-  width: 180px;
-  margin-bottom: 8px;
+.balance-skeleton { height: 44px; width: 180px; margin-bottom: 8px; }
+.rub-skeleton { height: 20px; width: 120px; margin-top: 6px; }
+.rate-skeleton { height: 14px; width: 140px; margin-top: 12px; }
+
+/* Not-in-TG message */
+.not-tg {
+  text-align: center;
+  padding: 60px 24px;
 }
 
-.rate-skeleton {
-  height: 16px;
-  width: 140px;
+.not-tg-icon {
+  font-size: 56px;
+  margin-bottom: 20px;
 }
 
-/* Logout */
-.logout-btn {
-  display: block;
+.not-tg-text {
+  font-size: 16px;
+  color: var(--muted);
+  line-height: 1.5;
+}
+
+.not-tg-bot {
+  display: inline-block;
+  margin-top: 12px;
+  color: var(--accent);
+  font-weight: 600;
+  font-size: 17px;
+}
+
+/* Stats overlay */
+.stats-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(5, 10, 20, 0.85);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  z-index: 100;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  opacity: 0;
+  visibility: hidden;
+  transition: all 0.3s ease;
+}
+
+.stats-overlay.active {
+  opacity: 1;
+  visibility: visible;
+}
+
+.stats-panel {
   width: 100%;
-  padding: 14px;
-  margin-top: 24px;
+  max-width: 480px;
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 20px 20px 0 0;
+  padding: 24px 20px 40px;
+  transform: translateY(100%);
+  transition: transform 0.35s cubic-bezier(0.32, 0.72, 0, 1);
+}
+
+.stats-overlay.active .stats-panel {
+  transform: translateY(0);
+}
+
+.stats-handle {
+  width: 40px;
+  height: 4px;
+  background: var(--border);
+  border-radius: 2px;
+  margin: 0 auto 20px;
+}
+
+.stats-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 20px;
+}
+
+.stats-title {
+  font-size: 18px;
+  font-weight: 700;
+}
+
+.stats-close {
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  border: 1px solid var(--border);
   background: transparent;
+  color: var(--muted);
+  font-size: 18px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.stats-close:hover {
+  border-color: var(--accent2);
+  color: var(--text);
+}
+
+.stats-user-info {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding-bottom: 16px;
+  margin-bottom: 16px;
+  border-bottom: 1px solid var(--border);
+}
+
+.stats-user-avatar {
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, var(--accent), var(--accent2));
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--bg);
+  font-weight: 700;
+  font-size: 17px;
+  flex-shrink: 0;
+  overflow: hidden;
+}
+
+.stats-user-avatar img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.stats-user-name {
+  font-size: 15px;
+  font-weight: 600;
+}
+
+.stats-user-username {
+  font-size: 13px;
+  color: var(--muted);
+  margin-top: 2px;
+}
+
+.stats-user-date {
+  font-size: 12px;
+  color: var(--muted);
+  margin-top: 2px;
+}
+
+.stats-grid {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.stats-row {
+  background: var(--card2);
   border: 1px solid var(--border);
   border-radius: 14px;
+  padding: 14px 16px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.stats-row-label {
+  font-size: 14px;
+  color: var(--muted);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.stats-row-label-icon {
+  font-size: 16px;
+}
+
+.stats-row-value {
+  font-size: 14px;
+  font-weight: 600;
+  text-align: right;
+}
+
+.stats-loading {
+  text-align: center;
+  padding: 30px;
   color: var(--muted);
   font-size: 14px;
-  font-weight: 500;
-  font-family: system-ui;
-  cursor: pointer;
-  transition: all 0.3s ease;
-  text-align: center;
 }
 
-.logout-btn:hover {
-  border-color: var(--bad);
-  color: var(--bad);
-}
-
-/* Fade in */
+/* Animations */
 @keyframes fadeUp {
-  from {
-    opacity: 0;
-    transform: translateY(12px);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
+  from { opacity: 0; transform: translateY(14px); }
+  to { opacity: 1; transform: translateY(0); }
 }
 
-.fade-in {
-  animation: fadeUp 0.5s ease forwards;
-}
-
-.fade-in-delay-1 { animation-delay: 0.1s; opacity: 0; }
-.fade-in-delay-2 { animation-delay: 0.2s; opacity: 0; }
-.fade-in-delay-3 { animation-delay: 0.3s; opacity: 0; }
+.fade-in { animation: fadeUp 0.5s ease forwards; }
+.fade-in-d1 { animation-delay: 0.08s; opacity: 0; }
+.fade-in-d2 { animation-delay: 0.16s; opacity: 0; }
+.fade-in-d3 { animation-delay: 0.24s; opacity: 0; }
 </style>
 </head>
 <body>
 
-<div class="container">
+<div class="container" id="appContainer" style="display:none">
+
   <!-- Header -->
   <div class="header fade-in">
-    <div class="header-left">
-      <div class="header-logo" style="background:transparent;border-radius:13px;overflow:hidden;padding:0;">
-        <svg viewBox="0 0 100 100" width="42" height="42">
-          <rect width="100" height="100" rx="20" fill="#101d36"/>
-          <path d="M65,20 A35,35 0 1,0 65,80 A25,25 0 1,1 65,20Z" fill="#f0e6d2"/>
-        </svg>
-      </div>
-      <div>
-        <div class="header-title" id="appName">Moon Wallet</div>
-        <div class="header-greeting" id="greeting">Загрузка...</div>
-      </div>
-    </div>
-    <div class="header-avatar" id="avatar" title="Профиль">?</div>
+    <svg viewBox="0 0 100 100" width="38" height="38">
+      <rect width="100" height="100" rx="20" fill="#101d36"/>
+      <path d="M65,20 A35,35 0 1,0 65,80 A25,25 0 1,1 65,20Z" fill="#f0e6d2"/>
+    </svg>
+    <div class="header-title">Moon Wallet</div>
   </div>
 
-  <!-- Balance -->
-  <div class="balance-card fade-in fade-in-delay-1">
-    <div class="balance-label">Баланс</div>
-    <div id="balanceDisplay">
+  <!-- Profile -->
+  <div class="profile-section fade-in fade-in-d1" id="profileBtn">
+    <div class="profile-avatar" id="avatarWrap"><span id="avatarInitials">?</span></div>
+    <div>
+      <div class="profile-name" id="profileName">Загрузка...</div>
+      <div class="profile-hint">Статистика и профиль</div>
+    </div>
+    <div class="profile-arrow">&#8250;</div>
+  </div>
+
+  <!-- Balance card -->
+  <a class="balance-card fade-in fade-in-d2" href="wallet.html" id="balanceCard">
+    <div class="balance-top">
+      <div class="balance-label">Баланс</div>
+      <div class="balance-arrow">&#8250;</div>
+    </div>
+    <div id="balanceLoading">
       <div class="skeleton balance-skeleton"></div>
-      <div class="skeleton rate-skeleton" style="margin-top:10px"></div>
+      <div class="skeleton rub-skeleton"></div>
+      <div class="skeleton rate-skeleton"></div>
     </div>
     <div id="balanceLoaded" style="display:none">
       <div class="balance-amount">
         <span id="balanceValue">0.00</span>
         <span class="balance-currency">USDT</span>
       </div>
+      <div class="balance-rub" id="balanceRub"></div>
       <div class="balance-rate">
         <span class="rate-dot"></span>
         <span id="rateDisplay">1 USDT = ...</span>
       </div>
     </div>
-  </div>
+  </a>
 
-  <!-- Quick actions -->
-  <div class="fade-in fade-in-delay-2">
-    <div class="section-title">Быстрые действия</div>
-    <div class="actions-grid">
-      <a class="action-card" href="qr-pay.html">
-        <div class="action-icon">📱</div>
-        <div class="action-label">QR Оплата</div>
-        <div class="action-desc">Сканировать и оплатить</div>
-      </a>
-      <a class="action-card" href="deposit.html">
-        <div class="action-icon">💰</div>
-        <div class="action-label">Пополнить</div>
-        <div class="action-desc">Добавить средства</div>
-      </a>
-      <a class="action-card" href="withdraw.html">
-        <div class="action-icon">💸</div>
-        <div class="action-label">Вывести</div>
-        <div class="action-desc">Вывод средств</div>
-      </a>
-      <a class="action-card" href="history.html">
-        <div class="action-icon">📋</div>
-        <div class="action-label">История</div>
-        <div class="action-desc">Все транзакции</div>
-      </a>
+  <!-- QR Pay button -->
+  <a class="qr-button fade-in fade-in-d3" href="qr-pay.html">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+      <rect x="3" y="3" width="7" height="7" rx="1"/>
+      <rect x="14" y="3" width="7" height="7" rx="1"/>
+      <rect x="3" y="14" width="7" height="7" rx="1"/>
+      <rect x="14" y="14" width="3" height="3"/>
+      <line x1="21" y1="14" x2="21" y2="17"/>
+      <line x1="14" y1="21" x2="17" y2="21"/>
+      <line x1="21" y1="21" x2="21" y2="21.01"/>
+    </svg>
+    Сканировать QR-код
+  </a>
+</div>
+
+<!-- Not-in-TG fallback -->
+<div class="container" id="notTgContainer" style="display:none">
+  <div class="header fade-in">
+    <svg viewBox="0 0 100 100" width="38" height="38">
+      <rect width="100" height="100" rx="20" fill="#101d36"/>
+      <path d="M65,20 A35,35 0 1,0 65,80 A25,25 0 1,1 65,20Z" fill="#f0e6d2"/>
+    </svg>
+    <div class="header-title">Moon Wallet</div>
+  </div>
+  <div class="not-tg fade-in fade-in-d1">
+    <div class="not-tg-icon">🌙</div>
+    <div class="not-tg-text">
+      Откройте приложение через Telegram бота
+      <br>
+      <span class="not-tg-bot">@Moon_walets_bot</span>
     </div>
   </div>
+</div>
 
-  <!-- Recent payments -->
-  <div class="recent-section fade-in fade-in-delay-3">
-    <div class="section-title">Последние QR-платежи</div>
-    <div class="recent-list" id="recentList">
-      <div class="empty-state">Загрузка...</div>
+<!-- Stats overlay -->
+<div class="stats-overlay" id="statsOverlay">
+  <div class="stats-panel">
+    <div class="stats-handle"></div>
+    <div class="stats-header">
+      <div class="stats-title">Профиль</div>
+      <button class="stats-close" id="statsClose">&times;</button>
+    </div>
+    <div id="statsContent">
+      <div class="stats-loading">Загрузка...</div>
     </div>
   </div>
-
-  <!-- Logout -->
-  <button class="logout-btn" id="logoutBtn">Выйти из аккаунта</button>
 </div>
 
 <script>
 (function() {
-  const API = localStorage.getItem('worker_base') || 'https://client-qr-pay.kireeshka73.workers.dev';
-  const TOKEN = localStorage.getItem('auth_token');
-  const siteName = localStorage.getItem('site_name') || 'Moon Wallet';
+  const tgApp = window.Telegram && window.Telegram.WebApp;
+  if (tgApp) { tgApp.ready(); tgApp.expand(); }
 
-  document.getElementById('appName').textContent = siteName;
-  document.title = siteName;
+  const API = 'https://client-qr-pay.kireeshka73.workers.dev';
 
-  // Auth check
-  if (!TOKEN) {
-    window.location.href = 'register.html';
-    return;
-  }
+  let currentUser = null;
+  let currentRate = null;
+  let userPhotoUrl = null;
 
-  const headers = {
-    'Authorization': 'Bearer ' + TOKEN,
-    'Content-Type': 'application/json'
-  };
-
-  // Fetch user data
-  async function loadUser() {
-    try {
-      const resp = await fetch(API + '/api/me', { headers });
-
-      if (!resp.ok) {
-        localStorage.removeItem('auth_token');
-        window.location.href = 'register.html';
-        return;
-      }
-
-      const data = await resp.json();
-      const user = data.user || data;
-
-      sessionStorage.setItem('user_data', JSON.stringify(user));
-
-      // Greeting
-      const name = user.first_name || user.username || 'User';
-      document.getElementById('greeting').textContent = getGreeting() + ', ' + name;
-
-      // Avatar
-      const initials = (name.charAt(0) || '?').toUpperCase();
-      document.getElementById('avatar').textContent = initials;
-
-      // Balance
-      const balance = parseFloat(user.balance || 0);
-      document.getElementById('balanceValue').textContent = formatNumber(balance);
-
-      // Rate
-      const rate = data.rate || null;
-      if (rate) {
-        document.getElementById('rateDisplay').textContent = '1 USDT = ' + formatNumber(rate, 2) + ' RUB';
-      } else {
-        document.getElementById('rateDisplay').textContent = 'Курс недоступен';
-      }
-
-      // Show balance
-      document.getElementById('balanceDisplay').style.display = 'none';
-      document.getElementById('balanceLoaded').style.display = 'block';
-
-    } catch(e) {
+  async function autoAuth() {
+    // Try existing token
+    let token = localStorage.getItem('auth_token');
+    if (token) {
+      try {
+        const resp = await fetch(API + '/api/me', {
+          headers: { 'Authorization': 'Bearer ' + token }
+        });
+        if (resp.ok) {
+          const data = await resp.json();
+          localStorage.setItem('worker_base', API);
+          return data;
+        }
+      } catch {}
       localStorage.removeItem('auth_token');
-      window.location.href = 'register.html';
     }
-  }
 
-  // Fetch recent QR payments
-  async function loadRecent() {
-    const listEl = document.getElementById('recentList');
-    try {
-      const resp = await fetch(API + '/api/qr/history', { headers });
-
-      if (!resp.ok) {
-        listEl.innerHTML = '<div class="empty-state">Не удалось загрузить</div>';
-        return;
-      }
-
-      const data = await resp.json();
-      const items = (data.items || data || []).slice(0, 3);
-
-      if (items.length === 0) {
-        listEl.innerHTML = '<div class="empty-state">Пока нет QR-платежей</div>';
-        return;
-      }
-
-      listEl.innerHTML = '';
-      items.forEach(function(item) {
-        const div = document.createElement('div');
-        div.className = 'recent-item';
-
-        const amount = parseFloat(item.amount || 0);
-        const isNeg = amount < 0 || item.type === 'payment' || item.type === 'out';
-        const sign = isNeg ? '-' : '+';
-        const cls = isNeg ? 'negative' : 'positive';
-
-        const date = item.created_at || item.date || '';
-        const formattedDate = formatDate(date);
-        const desc = item.description || item.merchant || item.memo || 'QR-платеж';
-
-        div.innerHTML =
-          '<div class="recent-left">' +
-            '<div class="recent-icon">📱</div>' +
-            '<div class="recent-info">' +
-              '<div class="recent-name">' + escapeHtml(desc) + '</div>' +
-              '<div class="recent-date">' + formattedDate + '</div>' +
-            '</div>' +
-          '</div>' +
-          '<div class="recent-amount ' + cls + '">' + sign + formatNumber(Math.abs(amount)) + ' USDT</div>';
-
-        listEl.appendChild(div);
-      });
-
-    } catch(e) {
-      listEl.innerHTML = '<div class="empty-state">Ошибка загрузки</div>';
+    // Auto-auth via TG initData
+    if (tgApp && tgApp.initData) {
+      try {
+        const resp = await fetch(API + '/api/auth/telegram', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ initData: tgApp.initData })
+        });
+        if (resp.ok) {
+          const data = await resp.json();
+          localStorage.setItem('auth_token', data.token);
+          localStorage.setItem('worker_base', API);
+          return data;
+        }
+      } catch {}
     }
-  }
 
-  // Helpers
-  function getGreeting() {
-    const h = new Date().getHours();
-    if (h < 6) return 'Доброй ночи';
-    if (h < 12) return 'Доброе утро';
-    if (h < 18) return 'Добрый день';
-    return 'Добрый вечер';
+    return null;
   }
 
   function formatNumber(num, decimals) {
@@ -596,32 +647,160 @@ body {
     });
   }
 
-  function formatDate(dateStr) {
-    if (!dateStr) return '';
-    try {
-      const d = new Date(dateStr);
-      return d.toLocaleDateString('ru-RU', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
-    } catch(e) {
-      return dateStr;
-    }
-  }
-
   function escapeHtml(str) {
     var div = document.createElement('div');
     div.appendChild(document.createTextNode(str));
     return div.innerHTML;
   }
 
-  // Logout
-  document.getElementById('logoutBtn').addEventListener('click', function() {
-    localStorage.removeItem('auth_token');
-    sessionStorage.removeItem('user_data');
-    window.location.href = 'register.html';
+  function setAvatar(containerId, photoUrl, name) {
+    var wrap = document.getElementById(containerId);
+    if (!wrap) return;
+    if (photoUrl) {
+      wrap.innerHTML = '<img src="' + escapeHtml(photoUrl) + '" alt="" onerror="this.parentNode.innerHTML=\'<span>' + escapeHtml((name || '?').charAt(0).toUpperCase()) + '</span>\'">';
+    } else {
+      wrap.innerHTML = '<span>' + escapeHtml((name || '?').charAt(0).toUpperCase()) + '</span>';
+    }
+  }
+
+  function showApp(data) {
+    var user = data.user || data;
+    currentUser = user;
+    currentRate = data.rate || null;
+
+    var name = user.first_name || user.username || 'User';
+
+    // Try to get photo
+    userPhotoUrl = user.photoUrl || user.photo_url || null;
+    if (!userPhotoUrl && tgApp && tgApp.initDataUnsafe && tgApp.initDataUnsafe.user) {
+      userPhotoUrl = tgApp.initDataUnsafe.user.photo_url || null;
+    }
+
+    // Profile section
+    setAvatar('avatarWrap', userPhotoUrl, name);
+    document.getElementById('profileName').textContent = name;
+
+    // Balance
+    var balance = parseFloat(user.balance || 0);
+    document.getElementById('balanceValue').textContent = formatNumber(balance);
+
+    if (currentRate) {
+      var rubAmount = balance * currentRate;
+      document.getElementById('balanceRub').textContent = '~ ' + formatNumber(rubAmount, 2) + ' RUB';
+      document.getElementById('rateDisplay').textContent = '1 USDT = ' + formatNumber(currentRate, 2) + ' RUB';
+    } else {
+      document.getElementById('balanceRub').textContent = '';
+      document.getElementById('rateDisplay').textContent = 'Курс недоступен';
+    }
+
+    document.getElementById('balanceLoading').style.display = 'none';
+    document.getElementById('balanceLoaded').style.display = 'block';
+
+    document.getElementById('appContainer').style.display = 'block';
+  }
+
+  function showNotTg() {
+    document.getElementById('notTgContainer').style.display = 'block';
+  }
+
+  // Stats
+  function openStats() {
+    document.getElementById('statsOverlay').classList.add('active');
+    loadStats();
+  }
+
+  function closeStats() {
+    document.getElementById('statsOverlay').classList.remove('active');
+  }
+
+  async function loadStats() {
+    var content = document.getElementById('statsContent');
+    content.innerHTML = '<div class="stats-loading">Загрузка...</div>';
+
+    var token = localStorage.getItem('auth_token');
+    if (!token || !currentUser) return;
+
+    try {
+      var resp = await fetch(API + '/api/user/stats', {
+        headers: { 'Authorization': 'Bearer ' + token }
+      });
+
+      var stats = {};
+      if (resp.ok) {
+        stats = await resp.json();
+      }
+
+      var user = currentUser;
+      var name = user.first_name || user.username || 'User';
+      var username = user.username ? ('@' + user.username) : 'Нет username';
+      var regDate = user.created_at || user.registered_at || '';
+      var formattedDate = '';
+      if (regDate) {
+        try {
+          formattedDate = new Date(regDate).toLocaleDateString('ru-RU', {
+            day: 'numeric', month: 'long', year: 'numeric'
+          });
+        } catch(e) { formattedDate = regDate; }
+      }
+
+      var qrCount = stats.qr_payments_count || stats.qrCount || 0;
+      var qrSum = stats.qr_payments_sum || stats.qrSum || 0;
+      var depCount = stats.deposits_count || stats.depositsCount || 0;
+      var depSum = stats.deposits_sum || stats.depositsSum || 0;
+      var wdCount = stats.withdrawals_count || stats.withdrawalsCount || 0;
+      var wdSum = stats.withdrawals_sum || stats.withdrawalsSum || 0;
+
+      var avatarHtml;
+      if (userPhotoUrl) {
+        avatarHtml = '<div class="stats-user-avatar"><img src="' + escapeHtml(userPhotoUrl) + '" alt=""></div>';
+      } else {
+        avatarHtml = '<div class="stats-user-avatar"><span>' + escapeHtml(name.charAt(0).toUpperCase()) + '</span></div>';
+      }
+
+      content.innerHTML =
+        '<div class="stats-user-info">' +
+          avatarHtml +
+          '<div>' +
+            '<div class="stats-user-name">' + escapeHtml(name) + '</div>' +
+            '<div class="stats-user-username">' + escapeHtml(username) + '</div>' +
+            (formattedDate ? '<div class="stats-user-date">С ' + formattedDate + '</div>' : '') +
+          '</div>' +
+        '</div>' +
+        '<div class="stats-grid">' +
+          '<div class="stats-row">' +
+            '<div class="stats-row-label"><span class="stats-row-label-icon">📱</span> QR-платежи</div>' +
+            '<div class="stats-row-value">' + qrCount + ' / ' + formatNumber(qrSum, 2) + ' RUB</div>' +
+          '</div>' +
+          '<div class="stats-row">' +
+            '<div class="stats-row-label"><span class="stats-row-label-icon">💰</span> Пополнения</div>' +
+            '<div class="stats-row-value">' + depCount + ' / ' + formatNumber(depSum, 2) + ' USDT</div>' +
+          '</div>' +
+          '<div class="stats-row">' +
+            '<div class="stats-row-label"><span class="stats-row-label-icon">💸</span> Выводы</div>' +
+            '<div class="stats-row-value">' + wdCount + ' / ' + formatNumber(wdSum, 2) + ' USDT</div>' +
+          '</div>' +
+        '</div>';
+
+    } catch(e) {
+      content.innerHTML = '<div class="stats-loading">Не удалось загрузить статистику</div>';
+    }
+  }
+
+  // Event listeners
+  document.getElementById('profileBtn').addEventListener('click', openStats);
+  document.getElementById('statsClose').addEventListener('click', closeStats);
+  document.getElementById('statsOverlay').addEventListener('click', function(e) {
+    if (e.target === this) closeStats();
   });
 
-  // Load data
-  loadUser();
-  loadRecent();
+  // Init
+  autoAuth().then(function(data) {
+    if (data) {
+      showApp(data);
+    } else {
+      showNotTg();
+    }
+  });
 })();
 </script>
 </body>
