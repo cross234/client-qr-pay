@@ -258,23 +258,35 @@ let qrImageB64 = '';
 
 // ── Telegram WebApp QR Scanner ──
 const tgApp = window.Telegram && window.Telegram.WebApp;
-const hasTgScanner = tgApp && typeof tgApp.showScanQrPopup === 'function';
 
-if (!hasTgScanner) {
-  // Show fallback file upload for desktop/non-TG browsers
-  $('fallbackUpload').style.display = 'block';
+// Check if we're REALLY inside Telegram WebApp (not just the JS loaded)
+const isInsideTg = !!(tgApp && tgApp.initData && tgApp.initData.length > 0);
+const hasTgScanner = isInsideTg && typeof tgApp.showScanQrPopup === 'function';
+
+if (tgApp && isInsideTg) {
+  try { tgApp.ready(); tgApp.expand(); } catch(_){}
 }
+
+// Always show fallback file upload as an option
+$('fallbackUpload').style.display = 'block';
 
 $('scanBtn').onclick = () => {
   if (hasTgScanner) {
-    tgApp.showScanQrPopup({ text: 'Наведите камеру на QR-код' }, (data) => {
-      if (data) {
-        tgApp.closeScanQrPopup();
-        onQrScanned(data);
-      }
-    });
+    try {
+      tgApp.showScanQrPopup({ text: 'Наведите камеру на QR-код' }, (data) => {
+        if (data) {
+          try { tgApp.closeScanQrPopup(); } catch(_){}
+          onQrScanned(data);
+          return true; // close popup
+        }
+      });
+    } catch(e) {
+      // TG scanner failed — fall back to file
+      console.warn('TG QR scanner error:', e);
+      $('fileInput').click();
+    }
   } else {
-    // fallback: trigger file input
+    // Not in TG or old version — open file picker (camera/gallery)
     $('fileInput').click();
   }
 };
