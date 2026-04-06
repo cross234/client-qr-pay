@@ -160,7 +160,22 @@ body {
   box-shadow: 0 8px 24px rgba(0,0,0,0.3);
 }
 .action-card:active { transform: translateY(0); }
-.action-icon { font-size: 28px; line-height: 1; }
+.action-icon {
+  width: 52px;
+  height: 52px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  line-height: 1;
+}
+.action-icon svg {
+  width: 100%;
+  height: 100%;
+  display: block;
+  overflow: visible;
+  filter: drop-shadow(0 0 6px rgba(240,230,210,0.35));
+}
 .action-label { font-size: 14px; font-weight: 600; }
 .action-desc { font-size: 12px; color: var(--muted); line-height: 1.3; }
 
@@ -378,6 +393,74 @@ body {
   let currentUser = null;
   let currentRate = null;
   let userPhotoUrl = null;
+
+  function applyActionIcons() {
+    const icons = {
+      'qr-pay.html': `
+        <svg viewBox="0 0 512 512" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+          <g fill="none" stroke="#f0e6d2" stroke-linecap="square" stroke-width="26">
+            <path d="M94 116h30v30" />
+            <path d="M388 116h30v30" />
+            <path d="M94 366v30h30" />
+            <path d="M388 396h30v-30" />
+          </g>
+          <rect x="156" y="118" width="200" height="276" rx="38" fill="#f0e6d2"/>
+          <g fill="#0a1628">
+            <circle cx="206" cy="178" r="8"/>
+            <circle cx="228" cy="178" r="8"/>
+            <circle cx="250" cy="178" r="8"/>
+            <circle cx="294" cy="178" r="8"/>
+            <circle cx="316" cy="178" r="8"/>
+            <circle cx="206" cy="200" r="8"/>
+            <circle cx="250" cy="200" r="8"/>
+            <circle cx="294" cy="200" r="8"/>
+            <circle cx="316" cy="200" r="8"/>
+            <circle cx="206" cy="222" r="8"/>
+            <circle cx="228" cy="222" r="8"/>
+            <circle cx="250" cy="222" r="8"/>
+            <circle cx="272" cy="222" r="8"/>
+            <circle cx="316" cy="222" r="8"/>
+            <circle cx="250" cy="244" r="8"/>
+            <circle cx="272" cy="244" r="8"/>
+            <circle cx="206" cy="288" r="8"/>
+            <circle cx="228" cy="288" r="8"/>
+            <circle cx="250" cy="288" r="8"/>
+            <circle cx="294" cy="288" r="8"/>
+            <circle cx="316" cy="288" r="8"/>
+            <circle cx="206" cy="310" r="8"/>
+            <circle cx="250" cy="310" r="8"/>
+            <circle cx="294" cy="310" r="8"/>
+            <circle cx="316" cy="310" r="8"/>
+            <circle cx="206" cy="332" r="8"/>
+            <circle cx="228" cy="332" r="8"/>
+            <circle cx="250" cy="332" r="8"/>
+            <circle cx="272" cy="332" r="8"/>
+            <circle cx="316" cy="332" r="8"/>
+          </g>
+        </svg>`,
+      'deposit.html': `
+        <svg viewBox="0 0 512 512" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+          <circle cx="256" cy="256" r="190" fill="none" stroke="#f0e6d2" stroke-width="24"
+            stroke-linecap="butt" stroke-dasharray="970 180" transform="rotate(-36 256 256)"/>
+          <path d="M256 176v154" fill="none" stroke="#f0e6d2" stroke-linecap="round" stroke-width="40"/>
+          <path d="M196 262l60 62 60-62" fill="none" stroke="#f0e6d2" stroke-linejoin="miter" stroke-width="40"/>
+        </svg>`,
+      'withdraw.html': `
+        <svg viewBox="0 0 512 512" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+          <circle cx="256" cy="256" r="190" fill="none" stroke="#f0e6d2" stroke-width="24"
+            stroke-linecap="butt" stroke-dasharray="970 180" transform="rotate(144 256 256)"/>
+          <path d="M256 336V182" fill="none" stroke="#f0e6d2" stroke-linecap="round" stroke-width="40"/>
+          <path d="M196 250l60 62 60-62" fill="none" stroke="#f0e6d2" stroke-linejoin="miter" stroke-width="40"/>
+        </svg>`
+    };
+
+    Object.entries(icons).forEach(([href, svg]) => {
+      const iconEl = document.querySelector('.action-card[href="' + href + '"] .action-icon');
+      if (iconEl) iconEl.innerHTML = svg;
+    });
+  }
+
+  applyActionIcons();
 
   // ── Auto-auth: try token, then TG initData ──
   async function autoAuth() {
