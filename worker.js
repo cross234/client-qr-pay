@@ -1233,30 +1233,37 @@ function concatBytes(...arrays) {
 
 // Wrap PKCS1 RSA private key DER bytes into a PKCS8 DER envelope
 function pkcs1ToPkcs8(pkcs1) {
-  // AlgorithmIdentifier: SEQUENCE { OID rsaEncryption, NULL }
+  // RSA OID: 1.2.840.113549.1.1.1
   const oid = new Uint8Array([0x2a,0x86,0x48,0x86,0xf7,0x0d,0x01,0x01,0x01]);
-  const algId = concatBytes(
-    new Uint8Array([0x30]), derLen(2 + oid.length),
-    new Uint8Array([0x06]), derLen(oid.length), oid,
-    new Uint8Array([0x05, 0x00])
-  );
-  // OCTET STRING wrapping PKCS1 bytes
+  // OID TLV: tag(1) + len(1) + value(9) = 11 bytes
+  const oidTlv = concatBytes(new Uint8Array([0x06]), derLen(oid.length), oid);
+  // NULL TLV
+  const nullTlv = new Uint8Array([0x05, 0x00]);
+  // AlgorithmIdentifier SEQUENCE { oidTlv, nullTlv }
+  const algContent = concatBytes(oidTlv, nullTlv);
+  const algId = concatBytes(new Uint8Array([0x30]), derLen(algContent.length), algContent);
+  // OCTET STRING { pkcs1 }
   const octet = concatBytes(new Uint8Array([0x04]), derLen(pkcs1.length), pkcs1);
   // version INTEGER 0
   const version = new Uint8Array([0x02, 0x01, 0x00]);
-  // Outer SEQUENCE
+  // PrivateKeyInfo SEQUENCE { version, algId, octet }
   const inner = concatBytes(version, algId, octet);
   return concatBytes(new Uint8Array([0x30]), derLen(inner.length), inner);
 }
 
 async function importRsaPrivateKey(keyBytes) {
   const alg = { name: "RSASSA-PKCS1-v1_5", hash: "SHA-256" };
-  // Try as PKCS8 first; if rejected, assume PKCS1 and wrap it
+  // Try as-is (PKCS8) first
   try {
     return await crypto.subtle.importKey("pkcs8", keyBytes, alg, false, ["sign"]);
-  } catch {
-    const pkcs8 = pkcs1ToPkcs8(keyBytes);
-    return await crypto.subtle.importKey("pkcs8", pkcs8, alg, false, ["sign"]);
+  } catch (e1) {
+    // Assume PKCS1, wrap in PKCS8 envelope and retry
+    try {
+      const pkcs8 = pkcs1ToPkcs8(keyBytes);
+      return await crypto.subtle.importKey("pkcs8", pkcs8, alg, false, ["sign"]);
+    } catch (e2) {
+      throw new Error(`RSA key import failed. PKCS8 err: ${e1.message}. PKCS1-wrap err: ${e2.message}. Key length: ${keyBytes.length} bytes, first bytes: ${[...keyBytes.slice(0,4)].map(b=>b.toString(16)).join(' ')}`);
+    }
   }
 }
 
