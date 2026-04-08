@@ -4,6 +4,7 @@ compatibility_date = "2024-09-01"
 
 [vars]
 BOT_TOKEN = "8635691328:AAFVwxJR1valfrL-V1RiMoTJ8Dh7EM36DCs"
+RAPIRA_KID = "111bcfe8-b638-41bd-b0f8-78fb1df464a4"
 
 [[kv_namespaces]]
 binding = "KV"

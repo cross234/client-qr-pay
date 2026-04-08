@@ -1195,173 +1195,281 @@ async function handleRequest(request, env, ctx) {
 }
 
 // ════════════════════════════════════════════════════════════
-//  AUTO-DEPOSIT: TronGrid scanner
+//  RAPIRA API — auto-deposit via merchant API
 // ════════════════════════════════════════════════════════════
 
-const USDT_TRC20_CONTRACT = "TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t";
-const DEPOSIT_TTL_MS = 60 * 60 * 1000; // 1 hour
+// ── Crypto helpers ───────────────────────────────────────────
+function b64urlFromBytes(bytes) {
+  let bin = "";
+  for (let i = 0; i < bytes.length; i++) bin += String.fromCharCode(bytes[i]);
+  return btoa(bin).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+}
 
-// POST /api/deposit/request — user creates pending deposit
+function b64ToBytes(raw) {
+  // Strip PEM headers and whitespace, decode base64
+  let s = String(raw || "").trim();
+  s = s.replace(/-----[^-]+-----/g, "").replace(/\s+/g, "");
+  const bin = atob(s);
+  const bytes = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+  return bytes;
+}
+
+async function createRapiraClientJwt(env) {
+  const te = new TextEncoder();
+  const rawKey = String(env.RAPIRA_PRIVATE_KEY || "").trim();
+  if (!rawKey) throw new Error("RAPIRA_PRIVATE_KEY not set");
+
+  const keyBytes = b64ToBytes(rawKey);
+  const privateKey = await crypto.subtle.importKey(
+    "pkcs8",
+    keyBytes.buffer,
+    { name: "RSASSA-PKCS1-v1_5", hash: "SHA-256" },
+    false,
+    ["sign"]
+  );
+
+  const nowSec = Math.floor(Date.now() / 1000);
+  const header = { typ: "JWT", alg: "RS256" };
+  const payload = { exp: nowSec + 3600, jti: crypto.randomUUID().replace(/-/g, "") };
+
+  const h = b64urlFromBytes(te.encode(JSON.stringify(header)));
+  const p = b64urlFromBytes(te.encode(JSON.stringify(payload)));
+  const signingInput = `${h}.${p}`;
+
+  const signature = await crypto.subtle.sign(
+    "RSASSA-PKCS1-v1_5",
+    privateKey,
+    te.encode(signingInput)
+  );
+
+  return `${signingInput}.${b64urlFromBytes(new Uint8Array(signature))}`;
+}
+
+async function getRapiraBearer(env) {
+  const cacheKey = "rapira:bearer";
+  const cached = await kvGet(env, cacheKey);
+  if (cached && cached.token && Number(cached.expiresAt) > Date.now() + 60000) {
+    return cached.token;
+  }
+
+  const clientJwt = await createRapiraClientJwt(env);
+  const kid = String(env.RAPIRA_KID || "");
+
+  const res = await fetch("https://api.rapira.net/open/generate_jwt", {
+    method: "POST",
+    headers: { "Content-Type": "application/json", "Accept": "application/json" },
+    body: JSON.stringify({ kid, jwt_token: clientJwt }),
+  });
+
+  const data = await res.json();
+  if (!data.token) throw new Error("Rapira bearer: no token: " + JSON.stringify(data).slice(0, 200));
+
+  const token = String(data.token);
+  const expMs = Date.now() + 3600 * 1000;
+  await kvPut(env, cacheKey, { token, expiresAt: expMs }, { expirationTtl: 3600 });
+  return token;
+}
+
+async function rapiraFetch(env, path, opts = {}) {
+  const bearer = await getRapiraBearer(env);
+  let url = "https://api.rapira.net" + path;
+
+  if (opts.query) {
+    url += (url.includes("?") ? "&" : "?") + new URLSearchParams(opts.query).toString();
+  }
+
+  const headers = {
+    "Authorization": "Bearer " + bearer,
+    "Accept": "application/json",
+    ...(opts.headers || {}),
+  };
+
+  let body = undefined;
+  if (opts.form) {
+    headers["Content-Type"] = "application/x-www-form-urlencoded";
+    body = new URLSearchParams(opts.form).toString();
+  } else if (opts.json !== undefined) {
+    headers["Content-Type"] = "application/json";
+    body = JSON.stringify(opts.json);
+  }
+
+  const r = await fetch(url, { method: opts.method || "GET", headers, body });
+  if (!r.ok) {
+    const txt = await r.text();
+    throw new Error(`Rapira ${path} → ${r.status}: ${txt.slice(0, 200)}`);
+  }
+  return r.json();
+}
+
+// Extract deposit list from various Rapira response shapes
+function rapiraDepositItems(data) {
+  if (Array.isArray(data?.data?.content)) return data.data.content;
+  if (Array.isArray(data?.content)) return data.content;
+  if (Array.isArray(data?.data)) return data.data;
+  if (Array.isArray(data)) return data;
+  return [];
+}
+
+// Credit a Rapira deposit to a user (idempotent via rapira_credited: key)
+async function creditRapiraDeposit(env, user, dep) {
+  const txid = String(dep?.txid || dep?.txHash || dep?.id || "").trim();
+  if (!txid) return false;
+
+  const dupKey = `rapira_credited:${txid}`;
+  const already = await kvGet(env, dupKey);
+  if (already) return false; // already credited
+
+  const amountUsdt = Number(dep?.amount || dep?.amountUsdt || 0);
+  if (amountUsdt <= 0) return false;
+  const amountMicro = usdtToMicro(amountUsdt);
+
+  try {
+    await adjustBalance(env, user.tgId, amountMicro, `Rapira deposit: ${txid}`);
+  } catch { return false; }
+
+  // Mark as credited (30 days TTL)
+  await kvPut(env, dupKey, { tgId: user.tgId, ts: now() }, { expirationTtl: 86400 * 30 });
+
+  // Record in deposit history
+  const depId = uid();
+  await kvPut(env, `dep:${depId}`, {
+    id: depId,
+    tgId: user.tgId,
+    username: user.username,
+    amountUsdt,
+    amountMicro,
+    txHash: txid,
+    status: "CONFIRMED",
+    auto: true,
+    source: "rapira",
+    createdAt: now(),
+  });
+
+  // Notify user
+  try {
+    await tgSend(env, user.tgId,
+      `💰 <b>Депозит зачислен!</b>\n\n` +
+      `💎 +${amountUsdt.toFixed(2)} USDT\n` +
+      `🔗 TX: <code>${txid.slice(0, 20)}...</code>`
+    );
+  } catch {}
+
+  // Notify admins
+  try {
+    await tgNotifyAdmins(env,
+      `✅ <b>Автопополнение (Rapira)</b>\n\n` +
+      `👤 @${user.username || user.tgId}\n` +
+      `💎 +${amountUsdt.toFixed(2)} USDT\n` +
+      `🔗 <code>${txid}</code>`
+    );
+  } catch {}
+
+  return true;
+}
+
+// ── POST /api/deposit/request ────────────────────────────────
+// Returns (or creates) the user's personal Rapira USDT-TRC20 deposit address.
 async function handleDepositRequest(req, env) {
   const [user, err] = await requireUser(req, env);
   if (err) return err;
 
-  const cfg = await getSettings(env);
-  const wallet = cfg.usdtWallet || "";
-  if (!wallet) return bad("Deposit wallet not configured");
-
-  const pending = (await kvGet(env, "pending_deposits")) || [];
-
-  // Cancel any existing PENDING request from this user
-  for (const p of pending) {
-    if (String(p.tgId) === String(user.tgId) && p.status === "PENDING") {
-      p.status = "CANCELLED";
-    }
+  // Reuse existing address if already created
+  if (user.rapiraDepositAddress) {
+    return json({
+      ok: true,
+      wallet: user.rapiraDepositAddress,
+      network: "TRC20",
+      expiresIn: 3600,
+    });
   }
 
-  const depReq = {
-    id: uid(),
-    tgId: user.tgId,
-    username: user.username,
-    status: "PENDING",
-    createdAt: now(),
-    txHash: "",
-    creditedE6: 0,
-  };
+  try {
+    const data = await rapiraFetch(env, "/open/deposit_address", {
+      method: "POST",
+      query: { currency: "usdt-trc20" },
+    });
 
-  pending.push(depReq);
-  await kvPut(env, "pending_deposits", pending.slice(-500));
+    const address = String(
+      data?.address || data?.data?.address || data?.wallet || ""
+    ).trim();
+    if (!address) throw new Error("No address in response: " + JSON.stringify(data).slice(0, 200));
 
-  return json({
-    ok: true,
-    wallet,
-    network: cfg.usdtNetwork || "TRC20",
-    expiresIn: Math.floor(DEPOSIT_TTL_MS / 1000),
-  });
+    user.rapiraDepositAddress = address;
+    user.updatedAt = now();
+    await saveUser(env, user);
+
+    return json({ ok: true, wallet: address, network: "TRC20", expiresIn: 3600 });
+  } catch (e) {
+    return bad("Failed to create deposit address: " + e.message, 500);
+  }
 }
 
-// GET /api/deposit/status — poll for deposit match
+// ── GET /api/deposit/status ──────────────────────────────────
+// Polls Rapira for the user's deposit address and credits on SUCCESS.
 async function handleDepositStatus(req, env) {
   const [user, err] = await requireUser(req, env);
   if (err) return err;
 
-  const pending = (await kvGet(env, "pending_deposits")) || [];
-  const mine = pending.filter(p => String(p.tgId) === String(user.tgId));
-  const latest = mine.sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0))[0];
-  if (!latest) return json({ ok: true, status: "NONE" });
+  const address = String(user.rapiraDepositAddress || "").trim();
+  if (!address) return json({ ok: true, status: "NONE" });
 
-  return json({
-    ok: true,
-    status: latest.status,
-    amountUsdt: (latest.creditedE6 || 0) / 1e6,
-    txHash: latest.txHash || "",
-  });
-}
-
-// Cron: scan TronGrid for incoming USDT deposits
-async function scanDeposits(env) {
-  const cfg = await getSettings(env);
-  const wallet = (cfg.usdtWallet || "").trim();
-  if (!wallet) return;
-
-  const pending = (await kvGet(env, "pending_deposits")) || [];
-  const active = pending
-    .filter(p => p.status === "PENDING" && (now() - p.createdAt < DEPOSIT_TTL_MS))
-    .sort((a, b) => a.createdAt - b.createdAt); // FIFO: oldest first
-  if (!active.length) return;
-
-  // Track processed TX hashes to avoid double-crediting
-  const processedTxs = new Set((await kvGet(env, "processed_txs")) || []);
-
-  // Fetch recent TRC20 transfers to wallet
-  let txs = [];
   try {
-    const url = `https://api.trongrid.io/v1/accounts/${wallet}/transactions/trc20?only_to=true&contract_address=${USDT_TRC20_CONTRACT}&limit=50&order_by=block_timestamp,desc`;
-    const headers = {};
-    if (cfg.trongridApiKey) headers["TRON-PRO-API-KEY"] = cfg.trongridApiKey;
-    const r = await fetch(url, { headers });
-    const j = await r.json();
-    txs = j.data || [];
-  } catch { return; }
-
-  // Filter unprocessed TXs with positive value
-  const newTxs = txs.filter(tx =>
-    tx.transaction_id &&
-    Number(tx.value || 0) > 0 &&
-    !processedTxs.has(tx.transaction_id)
-  );
-
-  if (!newTxs.length) return;
-
-  let changed = false;
-  const queue = [...active]; // copy for FIFO consumption
-
-  for (const tx of newTxs) {
-    if (!queue.length) break;
-
-    const valueE6 = Number(tx.value || 0);
-    const txHash = tx.transaction_id;
-
-    const match = queue.shift(); // oldest pending gets this TX
-
-    try {
-      await adjustBalance(env, match.tgId, valueE6, `Auto-deposit: ${txHash.slice(0, 16)}`);
-    } catch { continue; }
-
-    match.status = "CREDITED";
-    match.txHash = txHash;
-    match.creditedAt = now();
-    match.creditedE6 = valueE6;
-    changed = true;
-    processedTxs.add(txHash);
-
-    // Record in deposits
-    const depId = uid();
-    await kvPut(env, `dep:${depId}`, {
-      id: depId,
-      tgId: match.tgId,
-      username: match.username,
-      amountUsdt: valueE6 / 1e6,
-      amountMicro: valueE6,
-      txHash,
-      status: "CONFIRMED",
-      auto: true,
-      createdAt: now(),
+    const data = await rapiraFetch(env, "/open/deposit/records", {
+      method: "POST",
+      form: { pageNo: 0, pageSize: 20, address },
     });
 
-    // Notify user
-    await tgSend(env, match.tgId,
-      `💰 <b>Депозит зачислен!</b>\n\n` +
-      `💎 +${(valueE6 / 1e6).toFixed(2)} USDT\n` +
-      `🔗 TX: <code>${txHash.slice(0, 20)}...</code>`
-    );
+    const items = rapiraDepositItems(data);
 
-    // Notify admins
-    await tgNotifyAdmins(env,
-      `✅ <b>Автопополнение</b>\n\n` +
-      `👤 @${match.username || match.tgId}\n` +
-      `💎 +${(valueE6 / 1e6).toFixed(2)} USDT\n` +
-      `🔗 <code>${txHash}</code>`
-    );
+    for (const dep of items) {
+      const st = String(dep?.status || "").toUpperCase();
+
+      if (st === "SUCCESS") {
+        const credited = await creditRapiraDeposit(env, user, dep);
+        const amountUsdt = Number(dep?.amount || dep?.amountUsdt || 0);
+        return json({ ok: true, status: "CREDITED", amountUsdt });
+      }
+
+      if (["MEMPOOL", "PENDING_CONFIRMATIONS", "PENDING_AML", "PENDING"].includes(st)) {
+        return json({ ok: true, status: "PENDING", amountUsdt: Number(dep?.amount || 0) });
+      }
+    }
+
+    return json({ ok: true, status: "NONE" });
+  } catch (e) {
+    return json({ ok: true, status: "NONE", _error: e.message });
   }
+}
 
-  // Persist processed TX hashes (keep last 2000)
-  await kvPut(env, "processed_txs", [...processedTxs].slice(-2000));
+// ── Cron: scan Rapira deposits for all users ─────────────────
+async function scanRapiraDeposits(env) {
+  const userKeys = await kvList(env, "u:");
 
-  if (changed) {
-    const updated = pending.filter(p =>
-      p.status !== "CANCELLED" && (
-        p.status === "CREDITED" ||
-        (p.status === "PENDING" && now() - p.createdAt < DEPOSIT_TTL_MS)
-      )
-    ).slice(-500);
-    await kvPut(env, "pending_deposits", updated);
+  for (const key of userKeys) {
+    const user = await kvGet(env, key);
+    if (!user || !user.rapiraDepositAddress) continue;
+
+    try {
+      const data = await rapiraFetch(env, "/open/deposit/records", {
+        method: "POST",
+        form: { pageNo: 0, pageSize: 20, address: user.rapiraDepositAddress },
+      });
+
+      const items = rapiraDepositItems(data);
+
+      for (const dep of items) {
+        const st = String(dep?.status || "").toUpperCase();
+        if (st !== "SUCCESS") continue;
+        await creditRapiraDeposit(env, user, dep);
+      }
+    } catch {}
   }
 }
 
 export default {
   fetch: handleRequest,
   async scheduled(event, env, ctx) {
-    ctx.waitUntil(scanDeposits(env));
+    ctx.waitUntil(scanRapiraDeposits(env));
   },
 };
