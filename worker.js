@@ -1215,19 +1215,58 @@ function b64ToBytes(raw) {
   return bytes;
 }
 
+// DER length encoding helper
+function derLen(n) {
+  if (n < 128) return new Uint8Array([n]);
+  if (n < 256) return new Uint8Array([0x81, n]);
+  return new Uint8Array([0x82, (n >> 8) & 0xff, n & 0xff]);
+}
+
+// Concatenate multiple Uint8Arrays
+function concatBytes(...arrays) {
+  const total = arrays.reduce((s, a) => s + a.length, 0);
+  const out = new Uint8Array(total);
+  let off = 0;
+  for (const a of arrays) { out.set(a, off); off += a.length; }
+  return out;
+}
+
+// Wrap PKCS1 RSA private key DER bytes into a PKCS8 DER envelope
+function pkcs1ToPkcs8(pkcs1) {
+  // AlgorithmIdentifier: SEQUENCE { OID rsaEncryption, NULL }
+  const oid = new Uint8Array([0x2a,0x86,0x48,0x86,0xf7,0x0d,0x01,0x01,0x01]);
+  const algId = concatBytes(
+    new Uint8Array([0x30]), derLen(2 + oid.length),
+    new Uint8Array([0x06]), derLen(oid.length), oid,
+    new Uint8Array([0x05, 0x00])
+  );
+  // OCTET STRING wrapping PKCS1 bytes
+  const octet = concatBytes(new Uint8Array([0x04]), derLen(pkcs1.length), pkcs1);
+  // version INTEGER 0
+  const version = new Uint8Array([0x02, 0x01, 0x00]);
+  // Outer SEQUENCE
+  const inner = concatBytes(version, algId, octet);
+  return concatBytes(new Uint8Array([0x30]), derLen(inner.length), inner);
+}
+
+async function importRsaPrivateKey(keyBytes) {
+  const alg = { name: "RSASSA-PKCS1-v1_5", hash: "SHA-256" };
+  // Try as PKCS8 first; if rejected, assume PKCS1 and wrap it
+  try {
+    return await crypto.subtle.importKey("pkcs8", keyBytes, alg, false, ["sign"]);
+  } catch {
+    const pkcs8 = pkcs1ToPkcs8(keyBytes);
+    return await crypto.subtle.importKey("pkcs8", pkcs8, alg, false, ["sign"]);
+  }
+}
+
 async function createRapiraClientJwt(env) {
   const te = new TextEncoder();
   const rawKey = String(env.RAPIRA_PRIVATE_KEY || "").trim();
   if (!rawKey) throw new Error("RAPIRA_PRIVATE_KEY not set");
 
   const keyBytes = b64ToBytes(rawKey);
-  const privateKey = await crypto.subtle.importKey(
-    "pkcs8",
-    keyBytes.buffer,
-    { name: "RSASSA-PKCS1-v1_5", hash: "SHA-256" },
-    false,
-    ["sign"]
-  );
+  const privateKey = await importRsaPrivateKey(keyBytes);
 
   const nowSec = Math.floor(Date.now() / 1000);
   const header = { typ: "JWT", alg: "RS256" };
