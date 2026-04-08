@@ -1206,13 +1206,33 @@ function b64urlFromBytes(bytes) {
 }
 
 function b64ToBytes(raw) {
-  // Strip PEM headers and whitespace, decode base64
   let s = String(raw || "").trim();
-  s = s.replace(/-----[^-]+-----/g, "").replace(/\s+/g, "");
-  const bin = atob(s);
-  const bytes = new Uint8Array(bin.length);
-  for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
-  return bytes;
+
+  // Case 1: raw PEM text (starts with -----)
+  if (s.startsWith("-----")) {
+    s = s.replace(/-----[^-]+-----/g, "").replace(/\s+/g, "");
+    const bin = atob(s);
+    const out = new Uint8Array(bin.length);
+    for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i);
+    return out;
+  }
+
+  // Case 2: bare base64 — decode once
+  const bin = atob(s.replace(/\s+/g, ""));
+
+  // Case 2a: decoded result is PEM text (secret was base64-of-PEM)
+  if (bin.startsWith("-----")) {
+    let s2 = bin.replace(/-----[^-]+-----/g, "").replace(/\s+/g, "");
+    const bin2 = atob(s2);
+    const out = new Uint8Array(bin2.length);
+    for (let i = 0; i < bin2.length; i++) out[i] = bin2.charCodeAt(i);
+    return out;
+  }
+
+  // Case 2b: decoded result is raw DER bytes — use directly
+  const out = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i);
+  return out;
 }
 
 // DER length encoding helper
