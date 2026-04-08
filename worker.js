@@ -1206,53 +1206,36 @@ async function handleDepositRequest(req, env) {
   const [user, err] = await requireUser(req, env);
   if (err) return err;
 
-  const body = await req.json().catch(() => ({}));
-  const amountUsdt = Number(body.amountUsdt || 0);
-  if (amountUsdt < 1 || amountUsdt > 100000) return bad("Amount must be 1-100000 USDT");
-
   const cfg = await getSettings(env);
   const wallet = cfg.usdtWallet || "";
   if (!wallet) return bad("Deposit wallet not configured");
 
-  // Load pending deposits
   const pending = (await kvGet(env, "pending_deposits")) || [];
 
-  // Generate unique amount (add random cents to avoid collisions)
-  const baseE6 = Math.round(amountUsdt * 1e6);
-  let uniqueE6 = baseE6;
-  let attempts = 0;
-  while (attempts < 50) {
-    const suffix = Math.floor(1 + Math.random() * 9999) * 100;
-    uniqueE6 = baseE6 + suffix;
-    const exists = pending.find(p => p.uniqueE6 === uniqueE6 && p.status === "PENDING");
-    if (!exists) break;
-    attempts++;
+  // Cancel any existing PENDING request from this user
+  for (const p of pending) {
+    if (String(p.tgId) === String(user.tgId) && p.status === "PENDING") {
+      p.status = "CANCELLED";
+    }
   }
-
-  const uniqueAmountUsdt = uniqueE6 / 1e6;
 
   const depReq = {
     id: uid(),
     tgId: user.tgId,
     username: user.username,
-    requestedUsdt: amountUsdt,
-    uniqueE6,
-    uniqueAmountUsdt,
     status: "PENDING",
     createdAt: now(),
     txHash: "",
+    creditedE6: 0,
   };
 
   pending.push(depReq);
-  // Keep only last 500
-  const trimmed = pending.slice(-500);
-  await kvPut(env, "pending_deposits", trimmed);
+  await kvPut(env, "pending_deposits", pending.slice(-500));
 
   return json({
     ok: true,
     wallet,
     network: cfg.usdtNetwork || "TRC20",
-    uniqueAmountUsdt,
     expiresIn: Math.floor(DEPOSIT_TTL_MS / 1000),
   });
 }
@@ -1264,15 +1247,13 @@ async function handleDepositStatus(req, env) {
 
   const pending = (await kvGet(env, "pending_deposits")) || [];
   const mine = pending.filter(p => String(p.tgId) === String(user.tgId));
-
-  // Find the most recent
   const latest = mine.sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0))[0];
   if (!latest) return json({ ok: true, status: "NONE" });
 
   return json({
     ok: true,
     status: latest.status,
-    amountUsdt: latest.uniqueAmountUsdt || 0,
+    amountUsdt: (latest.creditedE6 || 0) / 1e6,
     txHash: latest.txHash || "",
   });
 }
@@ -1284,8 +1265,13 @@ async function scanDeposits(env) {
   if (!wallet) return;
 
   const pending = (await kvGet(env, "pending_deposits")) || [];
-  const active = pending.filter(p => p.status === "PENDING" && (now() - p.createdAt < DEPOSIT_TTL_MS));
+  const active = pending
+    .filter(p => p.status === "PENDING" && (now() - p.createdAt < DEPOSIT_TTL_MS))
+    .sort((a, b) => a.createdAt - b.createdAt); // FIFO: oldest first
   if (!active.length) return;
+
+  // Track processed TX hashes to avoid double-crediting
+  const processedTxs = new Set((await kvGet(env, "processed_txs")) || []);
 
   // Fetch recent TRC20 transfers to wallet
   let txs = [];
@@ -1298,21 +1284,26 @@ async function scanDeposits(env) {
     txs = j.data || [];
   } catch { return; }
 
+  // Filter unprocessed TXs with positive value
+  const newTxs = txs.filter(tx =>
+    tx.transaction_id &&
+    Number(tx.value || 0) > 0 &&
+    !processedTxs.has(tx.transaction_id)
+  );
+
+  if (!newTxs.length) return;
+
   let changed = false;
+  const queue = [...active]; // copy for FIFO consumption
 
-  for (const tx of txs) {
+  for (const tx of newTxs) {
+    if (!queue.length) break;
+
     const valueE6 = Number(tx.value || 0);
-    const txHash = tx.transaction_id || "";
+    const txHash = tx.transaction_id;
 
-    // Find matching pending deposit
-    const match = active.find(p =>
-      p.uniqueE6 === valueE6 &&
-      p.status === "PENDING" &&
-      !pending.some(pp => pp.txHash === txHash && pp.status === "CREDITED")
-    );
-    if (!match) continue;
+    const match = queue.shift(); // oldest pending gets this TX
 
-    // Credit balance
     try {
       await adjustBalance(env, match.tgId, valueE6, `Auto-deposit: ${txHash.slice(0, 16)}`);
     } catch { continue; }
@@ -1320,7 +1311,9 @@ async function scanDeposits(env) {
     match.status = "CREDITED";
     match.txHash = txHash;
     match.creditedAt = now();
+    match.creditedE6 = valueE6;
     changed = true;
+    processedTxs.add(txHash);
 
     // Record in deposits
     const depId = uid();
@@ -1343,7 +1336,7 @@ async function scanDeposits(env) {
       `🔗 TX: <code>${txHash.slice(0, 20)}...</code>`
     );
 
-    // Notify admin
+    // Notify admins
     await tgNotifyAdmins(env,
       `✅ <b>Автопополнение</b>\n\n` +
       `👤 @${match.username || match.tgId}\n` +
@@ -1352,10 +1345,15 @@ async function scanDeposits(env) {
     );
   }
 
+  // Persist processed TX hashes (keep last 2000)
+  await kvPut(env, "processed_txs", [...processedTxs].slice(-2000));
+
   if (changed) {
-    // Remove expired, keep last 500
     const updated = pending.filter(p =>
-      p.status === "CREDITED" || (p.status === "PENDING" && now() - p.createdAt < DEPOSIT_TTL_MS)
+      p.status !== "CANCELLED" && (
+        p.status === "CREDITED" ||
+        (p.status === "PENDING" && now() - p.createdAt < DEPOSIT_TTL_MS)
+      )
     ).slice(-500);
     await kvPut(env, "pending_deposits", updated);
   }

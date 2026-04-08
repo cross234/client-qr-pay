@@ -63,52 +63,8 @@ body {
 .wallet-address { font-size: 15px; font-weight: 600; color: var(--text); line-height: 1.5; }
 .copy-hint { display: flex; align-items: center; gap: 6px; margin-top: 10px; font-size: 12px; color: var(--muted); }
 .instructions { font-size: 13px; color: var(--muted); line-height: 1.6; margin-top: 14px; }
-
-/* Amount input for auto-deposit */
-.field { margin-bottom: 14px; }
-.field label { display: block; font-size: 13px; color: var(--muted); margin-bottom: 5px; font-weight: 600; }
-.field input {
-  width: 100%; background: var(--card2); border: 1px solid var(--border);
-  border-radius: 14px; padding: 14px 16px; color: var(--text);
-  font-size: 16px; outline: none; transition: border-color .2s; font-family: inherit;
-}
-.field input:focus { border-color: var(--accent2); }
-.field input::placeholder { color: #5a6b85; }
-
-.btn {
-  width: 100%; padding: 16px; border-radius: 16px; border: none;
-  background: linear-gradient(135deg, var(--accent), var(--accent2));
-  color: var(--bg); font-size: 16px; font-weight: 700;
-  font-family: inherit; cursor: pointer; transition: opacity .2s;
-}
-.btn:disabled { opacity: .5; cursor: not-allowed; }
-.btn.secondary {
-  background: transparent; border: 1px solid var(--border);
-  color: var(--muted); font-weight: 500;
-}
-.btn.secondary:hover { border-color: var(--accent); color: var(--accent); }
-
-/* Unique amount display */
-.unique-amount-card {
-  text-align: center; padding: 20px; margin-bottom: 16px;
-  background: rgba(125,211,168,.06); border: 1px solid rgba(125,211,168,.2);
-  border-radius: 16px; display: none;
-}
-.unique-amount-card.show { display: block; }
-.unique-amount-label { font-size: 13px; color: var(--muted); margin-bottom: 8px; }
-.unique-amount-value {
-  font-size: 32px; font-weight: 800; color: var(--ok);
-  letter-spacing: -1px; cursor: pointer;
-}
-.unique-amount-hint { font-size: 12px; color: var(--muted); margin-top: 8px; }
-.unique-amount-warn {
-  font-size: 12px; color: var(--warn); margin-top: 8px; font-weight: 600;
-}
-
-/* Status polling */
 .poll-status {
-  text-align: center; padding: 16px; display: none;
-  color: var(--muted); font-size: 14px;
+  text-align: center; padding: 16px; display: none; color: var(--muted); font-size: 14px;
 }
 .poll-status.show { display: block; }
 .poll-status .spinner {
@@ -118,18 +74,14 @@ body {
   vertical-align: middle; margin-right: 8px;
 }
 @keyframes spin { to { transform: rotate(360deg); } }
-
 .credited-msg {
   text-align: center; padding: 20px; display: none;
   background: rgba(125,211,168,.1); border: 1px solid rgba(125,211,168,.3);
   border-radius: 16px; color: var(--ok); font-size: 18px; font-weight: 700;
+  margin-bottom: 16px;
 }
 .credited-msg.show { display: block; }
-
-/* Timer */
-.timer { font-size: 13px; color: var(--warn); text-align: center; margin-top: 8px; font-weight: 600; }
-
-/* History */
+.timer { font-size: 13px; color: var(--warn); text-align: center; margin-top: 10px; font-weight: 600; }
 .history-item {
   background: var(--card2); border: 1px solid var(--border);
   border-radius: 16px; padding: 14px 16px; margin-bottom: 10px;
@@ -154,6 +106,12 @@ body {
   opacity: 0; transition: all .3s ease; z-index: 999; pointer-events: none;
 }
 .toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+.loading-card { text-align: center; padding: 30px 20px; color: var(--muted); }
+.loading-card .spinner {
+  display: inline-block; width: 28px; height: 28px;
+  border: 3px solid var(--border); border-top-color: var(--accent);
+  border-radius: 50%; animation: spin .8s linear infinite; margin-bottom: 12px;
+}
 .hidden { display: none; }
 </style>
 </head>
@@ -177,22 +135,16 @@ body {
     </div>
   </div>
 
-  <!-- Step 1: Enter amount -->
-  <div class="card" id="step1">
-    <div class="section-title">Автоматическое пополнение</div>
-    <div class="field">
-      <label>Сумма USDT</label>
-      <input type="number" id="amountInput" placeholder="100" min="1" step="any" inputmode="decimal">
-    </div>
-    <button class="btn" id="btnRequest" type="button">Получить адрес и сумму</button>
-    <div class="instructions" style="margin-top:14px">
-      Укажите сумму, и мы сгенерируем уникальную сумму для перевода.
-      После отправки USDT — баланс зачислится <b>автоматически</b>.
+  <!-- Loading -->
+  <div class="card" id="loadingCard">
+    <div class="loading-card">
+      <div class="spinner"></div>
+      <div>Получаем адрес...</div>
     </div>
   </div>
 
-  <!-- Step 2: Show wallet + unique amount + poll -->
-  <div id="step2" class="hidden">
+  <!-- Address + polling -->
+  <div id="depositView" class="hidden">
     <div class="card">
       <div class="section-title">Адрес для пополнения</div>
       <div id="networkBadge" class="network-badge"></div>
@@ -205,23 +157,21 @@ body {
           Нажмите, чтобы скопировать
         </div>
       </div>
-    </div>
-
-    <div class="unique-amount-card show" id="uniqueCard">
-      <div class="unique-amount-label">Отправьте точно эту сумму:</div>
-      <div class="unique-amount-value" id="uniqueAmount" onclick="copyAmount()">—</div>
-      <div class="unique-amount-hint">USDT (нажмите чтобы скопировать)</div>
-      <div class="unique-amount-warn">Сумма должна совпадать до копейки!</div>
+      <div class="instructions">
+        Отправьте любую сумму USDT на этот адрес — баланс зачислится <b>автоматически</b> в течение ~2 минут.
+      </div>
       <div class="timer" id="timer"></div>
     </div>
 
     <div class="poll-status show" id="pollStatus">
       <span class="spinner"></span> Ожидаем перевод...
     </div>
+  </div>
 
-    <div class="credited-msg" id="creditedMsg">Пополнение зачислено!</div>
-
-    <button class="btn secondary" id="btnCancel" type="button" style="margin-top:8px">Отмена</button>
+  <!-- Success -->
+  <div class="credited-msg" id="creditedMsg">
+    <div>Пополнение зачислено!</div>
+    <div id="creditedAmount" style="font-size:14px;margin-top:8px;font-weight:500;opacity:.8;"></div>
   </div>
 
   <!-- History -->
@@ -242,7 +192,6 @@ const $ = id => document.getElementById(id);
 const hdr = () => ({ 'Authorization': 'Bearer ' + TOKEN, 'Content-Type': 'application/json' });
 
 let depositWallet = '';
-let uniqueAmountStr = '';
 let pollTimer = null;
 let countdownTimer = null;
 let expiresAt = 0;
@@ -257,15 +206,10 @@ function copyAddress() {
   if (!depositWallet) return;
   navigator.clipboard.writeText(depositWallet).then(() => showToast()).catch(() => {});
 }
-function copyAmount() {
-  if (!uniqueAmountStr) return;
-  navigator.clipboard.writeText(uniqueAmountStr).then(() => showToast('Сумма скопирована!')).catch(() => {});
-}
 function showError(msg) {
   $('errorBox').textContent = msg;
   $('errorBox').classList.add('show');
 }
-
 function formatDate(d) {
   if (!d) return '';
   const dt = new Date(typeof d === 'number' ? d : d);
@@ -277,7 +221,6 @@ function truncate(s, n) {
   return s.length <= n ? s : s.slice(0, n/2) + '...' + s.slice(-n/2);
 }
 
-// ── Load balance ──
 async function loadBalance() {
   try {
     const r = await fetch(BASE + '/api/me', { headers: hdr() });
@@ -287,46 +230,31 @@ async function loadBalance() {
   } catch { $('balanceValue').textContent = '0.00'; }
 }
 
-// ── Step 1: Request deposit ──
-$('btnRequest').onclick = async () => {
-  const amt = parseFloat($('amountInput').value);
-  if (!amt || amt < 1) { showError('Минимум 1 USDT'); return; }
-
-  $('btnRequest').disabled = true;
-  $('errorBox').classList.remove('show');
-
+async function createDepositRequest() {
   try {
     const r = await fetch(BASE + '/api/deposit/request', {
-      method: 'POST', headers: hdr(),
-      body: JSON.stringify({ amountUsdt: amt })
+      method: 'POST', headers: hdr(), body: JSON.stringify({})
     });
     const d = await r.json();
     if (!r.ok || !d.ok) throw new Error(d.error || 'Ошибка');
 
     depositWallet = d.wallet;
-    uniqueAmountStr = String(d.uniqueAmountUsdt);
     expiresAt = Date.now() + (d.expiresIn || 3600) * 1000;
 
     $('walletAddr').textContent = depositWallet;
     $('networkBadge').textContent = d.network || 'TRC20';
-    $('uniqueAmount').textContent = d.uniqueAmountUsdt.toFixed(6) + ' USDT';
 
-    // Switch to step 2
-    $('step1').classList.add('hidden');
-    $('step2').classList.remove('hidden');
+    $('loadingCard').classList.add('hidden');
+    $('depositView').classList.remove('hidden');
 
-    // Start polling
     startPolling();
     startCountdown();
-
   } catch (e) {
-    showError(e.message);
-  } finally {
-    $('btnRequest').disabled = false;
+    $('loadingCard').classList.add('hidden');
+    showError('Ошибка получения адреса: ' + e.message);
   }
-};
+}
 
-// ── Polling ──
 function startPolling() {
   stopPolling();
   pollTimer = setInterval(async () => {
@@ -336,10 +264,11 @@ function startPolling() {
       if (d.ok && d.status === 'CREDITED') {
         stopPolling();
         stopCountdown();
-        $('pollStatus').classList.remove('show');
+        $('depositView').classList.add('hidden');
         $('creditedMsg').classList.add('show');
-        $('uniqueCard').style.display = 'none';
-        $('btnCancel').style.display = 'none';
+        if (d.amountUsdt > 0) {
+          $('creditedAmount').textContent = '+' + parseFloat(d.amountUsdt).toFixed(2) + ' USDT зачислено на баланс';
+        }
         loadBalance();
         loadHistory();
         setTimeout(() => { window.location.href = 'index.html'; }, 3000);
@@ -351,7 +280,6 @@ function startPolling() {
 function stopPolling() {
   if (pollTimer) { clearInterval(pollTimer); pollTimer = null; }
 }
-
 function startCountdown() {
   stopCountdown();
   updateTimer();
@@ -363,28 +291,15 @@ function stopCountdown() {
 function updateTimer() {
   const left = Math.max(0, expiresAt - Date.now());
   if (left <= 0) {
-    $('timer').textContent = 'Время истекло — создайте новый запрос';
+    $('timer').textContent = 'Время истекло — обновите страницу';
     stopPolling();
     return;
   }
   const m = Math.floor(left / 60000);
   const s = Math.floor((left % 60000) / 1000);
-  $('timer').textContent = `Осталось: ${m}:${String(s).padStart(2, '0')}`;
+  $('timer').textContent = `Ожидание: ${m}:${String(s).padStart(2, '0')}`;
 }
 
-// ── Cancel ──
-$('btnCancel').onclick = () => {
-  stopPolling();
-  stopCountdown();
-  $('step1').classList.remove('hidden');
-  $('step2').classList.add('hidden');
-  $('creditedMsg').classList.remove('show');
-  $('uniqueCard').style.display = '';
-  $('pollStatus').classList.add('show');
-  $('btnCancel').style.display = '';
-};
-
-// ── History ──
 async function loadHistory() {
   const list = $('historyList');
   try {
@@ -392,21 +307,16 @@ async function loadHistory() {
     const d = await r.json();
     const items = (d.items || []).slice(0, 5);
     if (!items.length) { list.innerHTML = '<div class="empty-state">Нет пополнений</div>'; return; }
-
     list.innerHTML = items.map(item => {
       const hash = item.txHash || '';
       let hashHtml = '';
       if (hash) {
-        if (hash.startsWith('http')) {
-          hashHtml = '<div class="history-hash"><a href="' + hash + '" target="_blank">' + truncate(hash, 40) + '</a></div>';
-        } else {
-          hashHtml = '<div class="history-hash">' + truncate(hash, 30) + '</div>';
-        }
+        const url = 'https://tronscan.org/#/transaction/' + hash;
+        hashHtml = '<div class="history-hash"><a href="' + url + '" target="_blank">' + truncate(hash, 30) + '</a></div>';
       }
-      const auto = item.auto ? ' (авто)' : '';
       return '<div class="history-item">' +
         '<div class="history-row">' +
-          '<span class="history-amount">+' + parseFloat(item.amountUsdt || 0).toFixed(2) + ' USDT' + auto + '</span>' +
+          '<span class="history-amount">+' + parseFloat(item.amountUsdt || 0).toFixed(2) + ' USDT</span>' +
           '<span class="history-date">' + formatDate(item.createdAt || item.date) + '</span>' +
         '</div>' + hashHtml + '</div>';
     }).join('');
@@ -415,6 +325,7 @@ async function loadHistory() {
 
 loadBalance();
 loadHistory();
+createDepositRequest();
 </script>
 </body>
 </html>
