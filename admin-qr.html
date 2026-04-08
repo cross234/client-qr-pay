@@ -150,6 +150,13 @@ h1 { font-size: 1.5rem; color: var(--accent); flex: 1; }
 .qr-img-container img:hover { transform: scale(1.02); }
 .qr-img-hint { font-size: .8rem; color: var(--muted); margin-top: 6px; }
 
+.qr-data-box {
+  background: var(--card2); border: 1px solid var(--border);
+  border-radius: 12px; padding: 12px 14px; margin-bottom: 14px;
+  font-size: .8rem; color: var(--muted); word-break: break-all;
+  line-height: 1.4; max-height: 120px; overflow-y: auto;
+}
+
 /* Action buttons */
 .qr-actions { display: flex; gap: 12px; flex-wrap: wrap; }
 .btn-paid {
@@ -305,9 +312,8 @@ function renderCard(item) {
       </div>
       ${item.note ? `<div class="qr-note">${escapeHtml(item.note)}</div>` : ''}
       ${item.reason ? `<div class="qr-note" style="border-color:var(--bad);color:var(--bad)">Причина: ${escapeHtml(item.reason)}</div>` : ''}
-      <div class="qr-image-area" id="imgArea-${item.id}">
-        <button class="btn btn-show-qr" onclick="loadQRImage('${item.id}')">Показать QR</button>
-      </div>
+      ${item.qrData ? `<div class="qr-data-box">${escapeHtml(item.qrData)}</div>` : ''}
+      <div class="qr-image-area" id="imgArea-${item.id}"></div>
       ${isPending ? `
       <div class="qr-actions">
         <button class="btn btn-paid" onclick="markPaid('${item.id}')">&#10004; Оплачено</button>
@@ -337,6 +343,8 @@ function loadQR() {
         list.innerHTML = '<div class="empty-state">Нет записей</div>';
       } else {
         list.innerHTML = items.map(renderCard).join('');
+        // Auto-load QR images
+        items.forEach(item => autoLoadQRImage(item.id));
       }
 
       // Pending count badge
@@ -373,22 +381,24 @@ function checkNewPending(items) {
   beepReady = true;
 }
 
-function loadQRImage(id) {
+function autoLoadQRImage(id) {
   const area = document.getElementById('imgArea-' + id);
-  area.innerHTML = '<div style="color:var(--muted);padding:8px">Загрузка QR...</div>';
+  if (!area) return;
 
   apiFetch('/api/admin/qr/' + id + '/image')
     .then(r => {
       const img = r.image || r.data || '';
-      area.innerHTML = `
-        <div class="qr-img-container">
-          <img src="data:image/jpeg;base64,${img}" alt="QR Code" onclick="openLightbox(this.src)">
-          <div class="qr-img-hint">Нажмите для увеличения. Отсканируйте камерой банковского приложения.</div>
-        </div>
-      `;
+      if (img) {
+        area.innerHTML = `
+          <div class="qr-img-container">
+            <img src="data:image/jpeg;base64,${img}" alt="QR Code" onclick="openLightbox(this.src)">
+            <div class="qr-img-hint">Нажмите для увеличения</div>
+          </div>
+        `;
+      }
     })
-    .catch(e => {
-      area.innerHTML = `<div style="color:var(--bad);padding:8px">Ошибка загрузки QR: ${e.message}</div>`;
+    .catch(() => {
+      // No image — that's fine, QR data text is already shown above
     });
 }
 
