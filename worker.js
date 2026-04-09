@@ -1188,6 +1188,25 @@ async function handleRequest(request, env, ctx) {
     if (path === "/api/deposit/status" && method === "GET")
       return await handleDepositStatus(request, env);
 
+    // ── Exchange (P2P buy via crossflag) ──────────────────────
+    if (path === "/api/exchange/rate" && method === "GET")
+      return await handleExchangeRate(request, env);
+    if (path === "/api/exchange/offers" && method === "GET")
+      return await handleExchangeOffers(request, env);
+    if (path === "/api/exchange/locks" && method === "GET")
+      return await handleExchangeLocks(request, env);
+    if (path === "/api/exchange/reserve" && method === "POST")
+      return await handleExchangeReserve(request, env);
+    if (path === "/api/exchange/mark_paid" && method === "POST")
+      return await handleExchangeMarkPaid(request, env);
+    if (path === "/api/exchange/cancel" && method === "POST")
+      return await handleExchangeCancel(request, env);
+    if (path === "/api/exchange/history" && method === "GET")
+      return await handleExchangeHistory(request, env);
+    const mExchDeal = path.match(/^\/api\/exchange\/deal\/([^/]+)$/);
+    if (mExchDeal && method === "GET")
+      return await handleExchangeDeal(request, env, mExchDeal[1]);
+
     return bad("Not found", 404);
   } catch (e) {
     return bad("Internal error: " + (e.message || String(e)), 500);
@@ -1531,6 +1550,178 @@ async function scanRapiraDeposits(env) {
       }
     } catch {}
   }
+}
+
+// ════════════════════════════════════════════════════════════
+//  EXCHANGE — P2P buy via crossflag
+// ════════════════════════════════════════════════════════════
+
+const CROSSFLAG_BASE = "https://api.crossflag.org";
+
+async function cfGet(path) {
+  const res = await fetch(CROSSFLAG_BASE + path, { headers: { Accept: "application/json" } });
+  return res.json().catch(() => ({ ok: false, error: "Crossflag unavailable" }));
+}
+
+async function cfPost(path, body) {
+  const res = await fetch(CROSSFLAG_BASE + path, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Accept: "application/json" },
+    body: JSON.stringify(body),
+  });
+  return res.json().catch(() => ({ ok: false, error: "Crossflag unavailable" }));
+}
+
+// Ensure user has a Rapira deposit address, create one if missing
+async function ensureDepositAddress(env, user) {
+  if (user.rapiraDepositAddress) return user.rapiraDepositAddress;
+  try {
+    const data = await rapiraFetch(env, "/open/deposit_address", { method: "POST", query: { currency: "usdt-trc20" } });
+    const address = String(data?.address || data?.data?.address || "").trim();
+    if (address) {
+      user.rapiraDepositAddress = address;
+      user.updatedAt = now();
+      await saveUser(env, user);
+    }
+    return address;
+  } catch { return ""; }
+}
+
+async function handleExchangeRate(req, env) {
+  const d = await cfGet("/api/public/rapira_rate");
+  return json(d);
+}
+
+async function handleExchangeOffers(req, env) {
+  const d = await cfGet("/api/public/buy_offers");
+  return json(d);
+}
+
+async function handleExchangeLocks(req, env) {
+  const url = new URL(req.url);
+  const ids = url.searchParams.get("ids") || "";
+  const d = await cfGet("/api/public/buy_lock_status?ids=" + encodeURIComponent(ids));
+  return json(d);
+}
+
+async function handleExchangeReserve(req, env) {
+  const [user, err] = await requireUser(req, env);
+  if (err) return err;
+
+  const body = await req.json().catch(() => ({}));
+  const offerId = String(body.id || "").trim();
+  const reserveId = String(body.reserveId || "").trim();
+  const notifyOpen = body.notifyOpen !== false;
+  if (!offerId) return bad("Missing offer id");
+
+  // Ensure user has USDT deposit address
+  const address = await ensureDepositAddress(env, user);
+
+  const payload = {
+    id: offerId,
+    notifyOpen,
+    toAddress: address,
+    moonWalletUser: {
+      tgId: String(user.tgId || ""),
+      name: String(user.firstName || user.name || user.username || ""),
+      address,
+    },
+  };
+  if (reserveId) payload.reserveId = reserveId;
+
+  const d = await cfPost("/api/public/reserve_offer", payload);
+
+  if (d?.ok) {
+    // Store deal record in KV
+    const dealKey = `exch:${user.tgId}:${offerId}`;
+    const existing = await kvGet(env, dealKey) || {};
+    await kvPut(env, dealKey, {
+      ...existing,
+      offerId,
+      reserveId: d.reserveId || reserveId,
+      expiresAt: d.expiresAt || (now() + 20 * 60 * 1000),
+      amountRub: d.offer?.amountRub || 0,
+      rate: d.offer?.rate || 0,
+      payBank: d.offer?.payBank || "",
+      payRequisite: d.offer?.payRequisite || "",
+      method: d.offer?.method || "",
+      address,
+      status: "RESERVED",
+      createdAt: existing.createdAt || now(),
+      updatedAt: now(),
+    });
+
+    // Add to user's exchange index
+    const idxKey = `exch_idx:${user.tgId}`;
+    const idx = (await kvGet(env, idxKey)) || [];
+    if (!idx.includes(offerId)) idx.unshift(offerId);
+    await kvPut(env, idxKey, idx.slice(0, 50));
+  }
+
+  return json({ ...d, address });
+}
+
+async function handleExchangeMarkPaid(req, env) {
+  const [user, err] = await requireUser(req, env);
+  if (err) return err;
+
+  const body = await req.json().catch(() => ({}));
+  const offerId = String(body.id || "").trim();
+  const reserveId = String(body.reserveId || "").trim();
+  if (!offerId) return bad("Missing offer id");
+
+  const d = await cfPost("/api/public/mark_paid", { id: offerId, reserveId });
+
+  // Update local deal record
+  const dealKey = `exch:${user.tgId}:${offerId}`;
+  const deal = (await kvGet(env, dealKey)) || {};
+  await kvPut(env, dealKey, { ...deal, status: "PAID", paidAt: now(), updatedAt: now() });
+
+  return json(d);
+}
+
+async function handleExchangeCancel(req, env) {
+  const [user, err] = await requireUser(req, env);
+  if (err) return err;
+
+  const body = await req.json().catch(() => ({}));
+  const offerId = String(body.id || "").trim();
+  const reserveId = String(body.reserveId || "").trim();
+  if (!offerId) return bad("Missing offer id");
+
+  const d = await cfPost("/api/public/cancel_reserve", {
+    id: offerId,
+    reserveId,
+    cancelReason: "Moon Wallet user cancelled",
+  });
+
+  const dealKey = `exch:${user.tgId}:${offerId}`;
+  const deal = (await kvGet(env, dealKey)) || {};
+  await kvPut(env, dealKey, { ...deal, status: "CANCELLED", cancelledAt: now(), updatedAt: now() });
+
+  return json(d?.ok ? d : { ok: true });
+}
+
+async function handleExchangeHistory(req, env) {
+  const [user, err] = await requireUser(req, env);
+  if (err) return err;
+
+  const idxKey = `exch_idx:${user.tgId}`;
+  const idx = (await kvGet(env, idxKey)) || [];
+  const deals = [];
+  for (const offerId of idx.slice(0, 30)) {
+    const d = await kvGet(env, `exch:${user.tgId}:${offerId}`);
+    if (d) deals.push(d);
+  }
+  return json({ ok: true, deals });
+}
+
+async function handleExchangeDeal(req, env, offerId) {
+  const [user, err] = await requireUser(req, env);
+  if (err) return err;
+  const deal = await kvGet(env, `exch:${user.tgId}:${offerId}`);
+  if (!deal) return bad("Deal not found", 404);
+  return json({ ok: true, deal });
 }
 
 export default {

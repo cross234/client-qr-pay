@@ -3,52 +3,397 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-<title>Обменять — Moon Wallet</title>
+<title>Купить USDT — Moon Wallet</title>
 <style>
 :root {
   --bg: #0a1628; --card: #0f1d35; --card2: #132444; --border: #1c2f52;
-  --text: #faf5ef; --muted: #b8a99a; --accent: #e8d5b7; --accent2: #d4b896;
+  --text: #faf5ef; --muted: #8a9bb8; --accent: #e8d5b7; --accent2: #d4b896;
+  --green: #4ade80; --red: #f87171; --yellow: #fbbf24;
 }
-* { margin: 0; padding: 0; box-sizing: border-box; }
+* { margin: 0; padding: 0; box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
 body {
   font-family: system-ui, -apple-system, sans-serif;
   background: var(--bg); color: var(--text); min-height: 100vh;
-  display: flex; justify-content: center;
   background-image:
     radial-gradient(ellipse at 20% 0%, rgba(30,60,114,.4) 0%, transparent 60%),
     radial-gradient(ellipse at 80% 100%, rgba(15,40,80,.3) 0%, transparent 60%);
 }
-.container { width: 100%; max-width: 480px; padding: 12px 16px 30px; }
+.container { width: 100%; max-width: 480px; margin: 0 auto; padding: 12px 16px 40px; }
+
 .header { display: flex; align-items: center; gap: 12px; margin-bottom: 20px; }
 .back-btn {
-  width: 40px; height: 40px; border-radius: 12px;
+  width: 40px; height: 40px; border-radius: 12px; flex-shrink: 0;
   background: var(--card); border: 1px solid var(--border);
-  color: var(--accent); font-size: 20px;
+  color: var(--accent); font-size: 18px;
   display: flex; align-items: center; justify-content: center;
   cursor: pointer; text-decoration: none;
 }
-h1 { font-size: 22px; font-weight: 700; color: var(--accent); }
-.placeholder {
-  text-align: center; padding: 60px 20px;
-  background: var(--card); border: 1px solid var(--border);
-  border-radius: 20px;
-}
-.placeholder .icon { font-size: 56px; margin-bottom: 16px; }
-.placeholder .title { font-size: 18px; font-weight: 700; margin-bottom: 8px; }
-.placeholder .desc { font-size: 14px; color: var(--muted); line-height: 1.5; }
+.header-info { flex: 1; }
+h1 { font-size: 20px; font-weight: 700; color: var(--accent); }
+.rate-badge { display: inline-flex; align-items: center; gap: 5px; font-size: 13px; color: var(--muted); margin-top: 2px; }
+.rate-badge b { color: var(--accent2); }
+
+.screen { display: none; }
+.screen.active { display: block; }
+
+/* Loading */
+.loading-wrap { display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 80px 0; gap: 16px; }
+.spinner { width: 40px; height: 40px; border-radius: 50%; border: 3px solid var(--border); border-top-color: var(--accent); animation: spin .8s linear infinite; }
+@keyframes spin { to { transform: rotate(360deg); } }
+.loading-text { color: var(--muted); font-size: 14px; }
+
+/* Empty */
+.empty-wrap { text-align: center; padding: 60px 20px; background: var(--card); border: 1px solid var(--border); border-radius: 20px; }
+.empty-icon { font-size: 48px; margin-bottom: 12px; }
+.empty-title { font-size: 16px; font-weight: 600; margin-bottom: 6px; }
+.empty-desc { font-size: 13px; color: var(--muted); line-height: 1.5; }
+.retry-btn { margin-top: 16px; padding: 10px 24px; border-radius: 12px; background: var(--card2); border: 1px solid var(--border); color: var(--accent); font-size: 14px; cursor: pointer; }
+
+/* Offers */
+.section-title { font-size: 12px; font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: .06em; margin-bottom: 10px; }
+.offers-list { display: flex; flex-direction: column; gap: 10px; }
+.offer-card { background: var(--card); border: 1px solid var(--border); border-radius: 16px; padding: 14px 16px; cursor: pointer; transition: border-color .15s, transform .1s; }
+.offer-card:active { transform: scale(.98); border-color: var(--accent2); }
+.offer-top { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 10px; }
+.offer-amount-rub { font-size: 20px; font-weight: 700; }
+.offer-usdt { font-size: 13px; color: var(--muted); margin-top: 2px; }
+.method-badge { display: inline-flex; align-items: center; gap: 4px; padding: 4px 10px; border-radius: 8px; font-size: 12px; font-weight: 600; background: rgba(232,213,183,.1); color: var(--accent2); border: 1px solid rgba(232,213,183,.2); }
+.offer-bottom { display: flex; justify-content: space-between; align-items: center; }
+.offer-rate { font-size: 13px; color: var(--muted); }
+.offer-rate em { color: var(--accent); font-style: normal; font-weight: 600; }
+.buy-btn { padding: 8px 18px; border-radius: 10px; font-size: 13px; font-weight: 600; background: linear-gradient(135deg, #e8d5b7, #d4b896); color: #0a1628; border: none; cursor: pointer; }
+.buy-btn:active { opacity: .8; }
+
+/* Deal */
+.deal-card { background: var(--card); border: 1px solid var(--border); border-radius: 20px; padding: 20px; }
+.deal-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; }
+.deal-title { font-size: 16px; font-weight: 700; color: var(--accent); }
+.timer-wrap { display: flex; align-items: center; gap: 6px; }
+.timer-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--green); animation: pulse 1.2s ease-in-out infinite; }
+@keyframes pulse { 0%,100%{opacity:1} 50%{opacity:.4} }
+.timer { font-size: 15px; font-weight: 700; font-variant-numeric: tabular-nums; color: var(--green); }
+.timer.warn { color: var(--yellow); }
+.timer.urgent { color: var(--red); }
+
+.amount-block { text-align: center; padding: 16px; margin-bottom: 16px; background: var(--card2); border-radius: 14px; border: 1px solid var(--border); }
+.amount-label { font-size: 12px; color: var(--muted); margin-bottom: 4px; }
+.amount-rub { font-size: 28px; font-weight: 800; }
+.amount-usdt-line { font-size: 14px; color: var(--muted); margin-top: 2px; }
+.amount-usdt-line em { color: var(--accent2); font-style: normal; }
+
+.requisites { margin-bottom: 16px; }
+.req-row { display: flex; justify-content: space-between; align-items: center; padding: 12px 0; border-bottom: 1px solid var(--border); }
+.req-row:last-child { border-bottom: none; }
+.req-label { font-size: 13px; color: var(--muted); flex-shrink: 0; }
+.req-value { font-size: 14px; font-weight: 600; display: flex; align-items: center; gap: 6px; text-align: right; }
+.copy-btn { width: 28px; height: 28px; border-radius: 7px; background: var(--card2); border: 1px solid var(--border); color: var(--muted); font-size: 13px; cursor: pointer; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
+
+.deal-notice { background: rgba(251,191,36,.07); border: 1px solid rgba(251,191,36,.2); border-radius: 12px; padding: 12px 14px; margin-bottom: 16px; font-size: 13px; color: #fde68a; line-height: 1.5; }
+
+.paid-btn { width: 100%; padding: 16px; border-radius: 14px; font-size: 16px; font-weight: 700; background: linear-gradient(135deg, #4ade80, #22c55e); color: #0a2010; border: none; cursor: pointer; }
+.paid-btn:active { opacity: .85; }
+.paid-btn:disabled { opacity: .5; cursor: default; }
+.cancel-link { display: block; text-align: center; margin-top: 14px; font-size: 13px; color: var(--muted); cursor: pointer; text-decoration: underline; text-underline-offset: 3px; }
+
+/* Pending */
+.pending-card { background: var(--card); border: 1px solid var(--border); border-radius: 20px; padding: 28px 20px; text-align: center; }
+.pending-icon { font-size: 52px; margin-bottom: 16px; }
+.pending-title { font-size: 18px; font-weight: 700; color: var(--accent); margin-bottom: 8px; }
+.pending-desc { font-size: 14px; color: var(--muted); line-height: 1.6; margin-bottom: 20px; }
+.addr-block { background: var(--card2); border: 1px solid var(--border); border-radius: 12px; padding: 12px 14px; margin-bottom: 20px; text-align: left; }
+.addr-label { font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: .05em; margin-bottom: 4px; }
+.addr-value { font-size: 12px; color: var(--accent); word-break: break-all; display: flex; align-items: flex-start; gap: 8px; }
+.addr-text { flex: 1; line-height: 1.5; }
+
+.steps { display: flex; flex-direction: column; gap: 8px; margin-bottom: 24px; }
+.step { display: flex; align-items: center; gap: 10px; padding: 10px 12px; border-radius: 10px; background: var(--card2); border: 1px solid var(--border); }
+.step-icon { font-size: 18px; flex-shrink: 0; }
+.step-text { font-size: 13px; }
+.step-text small { display: block; font-size: 11px; color: var(--muted); margin-top: 1px; }
+.step.done { border-color: rgba(74,222,128,.3); background: rgba(74,222,128,.06); color: var(--green); }
+.step.active { border-color: rgba(232,213,183,.25); }
+.step.waiting { opacity: .45; }
+
+.back-offers-btn { width: 100%; padding: 14px; border-radius: 14px; font-size: 15px; font-weight: 600; background: var(--card2); border: 1px solid var(--border); color: var(--accent); cursor: pointer; }
+
+/* Toast */
+.toast { position: fixed; bottom: 30px; left: 50%; transform: translateX(-50%); background: rgba(15,29,53,.97); border: 1px solid var(--border); color: var(--text); padding: 10px 20px; border-radius: 12px; font-size: 14px; white-space: nowrap; z-index: 100; opacity: 0; transition: opacity .2s; pointer-events: none; }
+.toast.show { opacity: 1; }
 </style>
 </head>
 <body>
 <div class="container">
   <div class="header">
-    <a href="index.html" class="back-btn">&larr;</a>
-    <h1>Обменять</h1>
+    <a href="index.html" class="back-btn">←</a>
+    <div class="header-info">
+      <h1>Купить USDT</h1>
+      <div class="rate-badge">1 USDT = <b id="rateVal">…</b> ₽</div>
+    </div>
   </div>
-  <div class="placeholder">
-    <div class="icon">🔄</div>
-    <div class="title">Скоро</div>
-    <div class="desc">Раздел обмена валют находится в разработке</div>
+
+  <!-- Loading -->
+  <div class="screen active" id="screenLoading">
+    <div class="loading-wrap">
+      <div class="spinner"></div>
+      <div class="loading-text">Загружаем предложения…</div>
+    </div>
+  </div>
+
+  <!-- Empty -->
+  <div class="screen" id="screenEmpty">
+    <div class="empty-wrap">
+      <div class="empty-icon">🛒</div>
+      <div class="empty-title">Нет предложений</div>
+      <div class="empty-desc">Сейчас нет доступных заявок на покупку.<br>Попробуйте чуть позже.</div>
+      <button class="retry-btn" onclick="loadOffers()">Обновить</button>
+    </div>
+  </div>
+
+  <!-- Offers -->
+  <div class="screen" id="screenOffers">
+    <div class="section-title">Доступные предложения</div>
+    <div class="offers-list" id="offersList"></div>
+  </div>
+
+  <!-- Deal -->
+  <div class="screen" id="screenDeal">
+    <div class="deal-card">
+      <div class="deal-header">
+        <div class="deal-title">Оплата</div>
+        <div class="timer-wrap">
+          <div class="timer-dot"></div>
+          <div class="timer" id="timerEl">20:00</div>
+        </div>
+      </div>
+      <div class="amount-block">
+        <div class="amount-label">Переведите точную сумму</div>
+        <div class="amount-rub" id="dealAmountRub">—</div>
+        <div class="amount-usdt-line">≈ <em id="dealAmountUsdt">—</em> USDT зачислим</div>
+      </div>
+      <div class="requisites" id="requisites"></div>
+      <div class="deal-notice">
+        ⚠️ Переводите <strong>точную сумму</strong>. Комментарий к переводу <strong>не оставляйте</strong>.
+      </div>
+      <button class="paid-btn" id="paidBtn" onclick="markPaid()">✅ Я перевёл деньги</button>
+      <span class="cancel-link" onclick="cancelDeal()">Отменить сделку</span>
+    </div>
+  </div>
+
+  <!-- Pending -->
+  <div class="screen" id="screenPending">
+    <div class="pending-card">
+      <div class="pending-icon">⏳</div>
+      <div class="pending-title">Ожидаем подтверждения</div>
+      <div class="pending-desc">Вы отметили оплату. Оператор проверяет перевод и зачислит USDT на ваш баланс.</div>
+      <div class="addr-block" id="addrBlock" style="display:none">
+        <div class="addr-label">Ваш USDT TRC-20 адрес</div>
+        <div class="addr-value">
+          <span class="addr-text" id="addrText"></span>
+          <button class="copy-btn" onclick="copyAddr()">📋</button>
+        </div>
+      </div>
+      <div class="steps">
+        <div class="step done"><span class="step-icon">✅</span><div class="step-text">Оплата отмечена<small>Перевод зафиксирован</small></div></div>
+        <div class="step active"><span class="step-icon">🔍</span><div class="step-text">Проверка платежа<small>Оператор верифицирует перевод</small></div></div>
+        <div class="step waiting"><span class="step-icon">💸</span><div class="step-text">Зачисление USDT<small>На ваш баланс Moon Wallet</small></div></div>
+      </div>
+      <button class="back-offers-btn" onclick="startOver()">← К предложениям</button>
+    </div>
   </div>
 </div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+const API = '';
+let rate = 0;
+let deal = null;
+let timerInt = null;
+let keepAliveInt = null;
+
+function getToken() {
+  try { return localStorage.getItem('mw_token') || sessionStorage.getItem('mw_token') || ''; }
+  catch { return ''; }
+}
+
+async function api(path, opts = {}) {
+  const token = getToken();
+  const headers = { 'Content-Type': 'application/json', ...(opts.headers || {}) };
+  if (token) headers['Authorization'] = 'Bearer ' + token;
+  const res = await fetch(API + path, { ...opts, headers });
+  return res.json().catch(() => ({ ok: false, error: 'Ошибка сервера' }));
+}
+
+function show(id) {
+  document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
+  document.getElementById(id).classList.add('active');
+}
+
+function toast(msg, ms = 2600) {
+  const el = document.getElementById('toast');
+  el.textContent = msg;
+  el.classList.add('show');
+  setTimeout(() => el.classList.remove('show'), ms);
+}
+
+function fmtRub(n) { return Number(n || 0).toLocaleString('ru-RU'); }
+
+function methodLabel(m) {
+  return { SBP: '⚡ СБП', CARD: '💳 Карта', QR: '🔳 QR', BANK: '🏦 Банк' }[String(m || '').toUpperCase()] || String(m || '—');
+}
+
+async function loadOffers() {
+  show('screenLoading');
+  try {
+    const [rateD, offersD] = await Promise.all([
+      api('/api/exchange/rate'),
+      api('/api/exchange/offers')
+    ]);
+    if (rateD?.rate) {
+      rate = Number(rateD.rate);
+      document.getElementById('rateVal').textContent = rate.toFixed(2);
+    }
+    const offers = Array.isArray(offersD?.offers) ? offersD.offers : [];
+    if (!offers.length) { show('screenEmpty'); return; }
+
+    offers.sort((a, b) => Number(a.rate || 0) - Number(b.rate || 0));
+    const list = document.getElementById('offersList');
+    list.innerHTML = '';
+    offers.forEach(o => {
+      const r = Number(o.rate || rate || 0);
+      const usdt = r > 0 ? (Number(o.amountRub || 0) / r).toFixed(2) : '—';
+      const el = document.createElement('div');
+      el.className = 'offer-card';
+      el.innerHTML =
+        '<div class="offer-top">' +
+          '<div><div class="offer-amount-rub">' + fmtRub(o.amountRub) + ' ₽</div>' +
+          '<div class="offer-usdt">≈ ' + usdt + ' USDT</div></div>' +
+          '<div class="method-badge">' + methodLabel(o.method) + '</div>' +
+        '</div>' +
+        '<div class="offer-bottom">' +
+          '<div class="offer-rate">Курс: <em>' + r.toFixed(2) + ' ₽</em></div>' +
+          '<button class="buy-btn">Купить</button>' +
+        '</div>';
+      el.addEventListener('click', () => reserveOffer(o));
+      list.appendChild(el);
+    });
+    show('screenOffers');
+  } catch(e) {
+    show('screenEmpty');
+  }
+}
+
+async function reserveOffer(offer) {
+  show('screenLoading');
+  try {
+    const d = await api('/api/exchange/reserve', {
+      method: 'POST',
+      body: JSON.stringify({ id: offer.id, notifyOpen: true })
+    });
+    if (!d?.ok) {
+      toast(d?.error?.includes('reserved') ? 'Заявка уже занята' : (d?.error || 'Ошибка резервирования'));
+      await loadOffers();
+      return;
+    }
+    const o = d.offer || {};
+    const r = Number(o.rate || offer.rate || rate || 0);
+    const usdt = r > 0 ? (Number(o.amountRub || offer.amountRub || 0) / r).toFixed(2) : '—';
+    deal = {
+      offerId: offer.id,
+      reserveId: d.reserveId,
+      expiresAt: d.expiresAt || (Date.now() + 20 * 60 * 1000),
+      amountRub: o.amountRub || offer.amountRub,
+      rate: r, usdt,
+      payBank: o.payBank || '',
+      payRequisite: o.payRequisite || '',
+      method: o.method || offer.method || '',
+      address: d.address || ''
+    };
+
+    document.getElementById('dealAmountRub').textContent = fmtRub(deal.amountRub) + ' ₽';
+    document.getElementById('dealAmountUsdt').textContent = usdt;
+
+    const req = document.getElementById('requisites');
+    req.innerHTML = '';
+    const rows = [];
+    if (deal.payBank) rows.push(['Банк', deal.payBank]);
+    if (deal.payRequisite) {
+      const label = deal.method === 'SBP' ? 'Номер телефона' : deal.method === 'QR' ? 'Реквизиты' : 'Номер карты';
+      rows.push([label, deal.payRequisite]);
+    }
+    rows.push(['Способ', methodLabel(deal.method)]);
+    rows.forEach(([lbl, val]) => {
+      const row = document.createElement('div');
+      row.className = 'req-row';
+      const safeVal = String(val).replace(/'/g, '&#39;');
+      row.innerHTML = '<span class="req-label">' + lbl + '</span>' +
+        '<span class="req-value"><span>' + val + '</span>' +
+        '<button class="copy-btn" onclick="copyText(\'' + safeVal + '\')">📋</button></span>';
+      req.appendChild(row);
+    });
+
+    document.getElementById('paidBtn').disabled = false;
+    document.getElementById('paidBtn').textContent = '✅ Я перевёл деньги';
+    startTimer();
+    startKeepalive();
+    show('screenDeal');
+  } catch(e) {
+    toast('Ошибка: ' + (e.message || 'попробуйте ещё раз'));
+    await loadOffers();
+  }
+}
+
+function startTimer() {
+  clearInterval(timerInt);
+  tick();
+  timerInt = setInterval(tick, 1000);
+}
+function tick() {
+  if (!deal) return;
+  const left = Math.max(0, deal.expiresAt - Date.now());
+  const m = Math.floor(left / 60000), s = Math.floor((left % 60000) / 1000);
+  const el = document.getElementById('timerEl');
+  el.textContent = String(m).padStart(2,'0') + ':' + String(s).padStart(2,'0');
+  el.className = 'timer' + (m < 2 ? ' urgent' : m < 5 ? ' warn' : '');
+  if (left === 0) { clearInterval(timerInt); clearInterval(keepAliveInt); toast('Время вышло'); setTimeout(loadOffers, 1800); }
+}
+
+function startKeepalive() {
+  clearInterval(keepAliveInt);
+  keepAliveInt = setInterval(() => {
+    if (!deal) return;
+    api('/api/exchange/reserve', { method: 'POST', body: JSON.stringify({ id: deal.offerId, reserveId: deal.reserveId }) }).catch(() => {});
+  }, 30000);
+}
+
+async function markPaid() {
+  if (!deal) return;
+  const btn = document.getElementById('paidBtn');
+  btn.disabled = true; btn.textContent = 'Отправляем…';
+  try {
+    const d = await api('/api/exchange/mark_paid', { method: 'POST', body: JSON.stringify({ id: deal.offerId, reserveId: deal.reserveId }) });
+    clearInterval(timerInt); clearInterval(keepAliveInt);
+    if (deal.address) { document.getElementById('addrText').textContent = deal.address; document.getElementById('addrBlock').style.display = ''; }
+    show('screenPending');
+  } catch(e) {
+    btn.disabled = false; btn.textContent = '✅ Я перевёл деньги';
+    toast('Ошибка: ' + (e.message || 'попробуйте ещё раз'));
+  }
+}
+
+async function cancelDeal() {
+  if (!deal) { await loadOffers(); return; }
+  if (!confirm('Отменить сделку?')) return;
+  try { await api('/api/exchange/cancel', { method: 'POST', body: JSON.stringify({ id: deal.offerId, reserveId: deal.reserveId }) }); } catch {}
+  clearInterval(timerInt); clearInterval(keepAliveInt);
+  deal = null; await loadOffers();
+}
+
+function copyText(t) { navigator.clipboard?.writeText(t).catch(()=>{}); toast('Скопировано!'); }
+function copyAddr() { copyText(document.getElementById('addrText').textContent); }
+function startOver() { clearInterval(timerInt); clearInterval(keepAliveInt); deal = null; loadOffers(); }
+
+loadOffers();
+</script>
 </body>
 </html>
