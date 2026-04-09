@@ -1209,6 +1209,8 @@ async function handleRequest(request, env, ctx) {
 
     if (path === "/api/exchange/buy_request" && method === "POST")
       return await handleExchangeBuyRequest(request, env);
+    if (path === "/api/exchange/buy_request/cancel" && method === "POST")
+      return await handleExchangeBuyRequestCancel(request, env);
     if (path === "/api/exchange/buy_requests" && method === "GET")
       return await handleExchangeBuyRequests(request, env);
     if (path === "/api/admin/exchange_requests" && method === "GET")
@@ -1731,41 +1733,44 @@ async function handleExchangeDeal(req, env, offerId) {
   return json({ ok: true, deal });
 }
 
+const BUY_REQ_TTL_MS = 7 * 60 * 1000; // 7 minutes, matches crossflag
+
 async function handleExchangeBuyRequest(req, env) {
   const [user, err] = await requireUser(req, env);
   if (err) return err;
 
   const body = await req.json().catch(() => ({}));
-  const amountRub = Math.floor(Number(body.amountRub || body.amount || 0));
-  if (!amountRub || amountRub < 100) return bad("Минимальная сумма 100 ₽");
-  if (amountRub > 5_000_000) return bad("Слишком большая сумма");
+  const minRub = Math.floor(Number(body.minRub ?? body.amountRub ?? body.amount ?? 0));
+  const maxRub = Math.floor(Number(body.maxRub ?? body.amountRub ?? body.amount ?? minRub));
+  const count = Math.max(1, Math.min(10, Math.floor(Number(body.count ?? 1))));
+  if (!minRub || minRub < 100) return bad("Минимальная сумма 100 ₽");
+  if (maxRub < minRub) return bad("Максимум должен быть ≥ минимума");
+  if (maxRub > 5_000_000) return bad("Слишком большая сумма");
 
   const address = await ensureDepositAddress(env, user);
-
-  // Store request locally
   const reqId = "mwr_" + uid();
   const reqRec = {
     id: reqId,
     tgId: user.tgId,
     name: user.firstName || user.name || user.username || "",
-    amountRub,
+    minRub, maxRub, count,
     address,
     status: "PENDING",
+    matchedOffersCount: 0,
+    matchedOfferIds: [],
     createdAt: now(),
   };
   await kvPut(env, `buyreq:${user.tgId}:${reqId}`, reqRec);
 
-  // Add to user request index
   const idxKey = `buyreq_idx:${user.tgId}`;
   const idx = (await kvGet(env, idxKey)) || [];
   idx.unshift(reqId);
   await kvPut(env, idxKey, idx.slice(0, 50));
 
-  // Proxy to crossflag (no auth needed on crossflag side)
   let cfResult = null;
   try {
     cfResult = await cfPost("/api/public/mw_buy_request", {
-      amountRub,
+      minRub, maxRub, count,
       moonWalletUser: { tgId: String(user.tgId), name: reqRec.name, address },
       toAddress: address,
     });
@@ -1776,7 +1781,30 @@ async function handleExchangeBuyRequest(req, env) {
     }
   } catch {}
 
-  return json({ ok: true, id: reqId, status: "PENDING", amountRub, approxRate: cfResult?.approxRate || 0 });
+  return json({
+    ok: true, id: reqId, status: "PENDING",
+    minRub, maxRub, count,
+    approxRate: cfResult?.approxRate || 0,
+    createdAt: reqRec.createdAt,
+  });
+}
+
+async function handleExchangeBuyRequestCancel(req, env) {
+  const [user, err] = await requireUser(req, env);
+  if (err) return err;
+
+  const body = await req.json().catch(() => ({}));
+  const id = String(body.id || "").trim();
+  if (!id) return bad("Missing id");
+
+  const rec = await kvGet(env, `buyreq:${user.tgId}:${id}`);
+  if (!rec) return bad("Not found", 404);
+  if (String(rec.tgId) !== String(user.tgId)) return bad("Forbidden", 403);
+
+  rec.status = "CANCELLED";
+  rec.updatedAt = now();
+  await kvPut(env, `buyreq:${user.tgId}:${id}`, rec);
+  return json({ ok: true, id, status: "CANCELLED" });
 }
 
 async function handleExchangeBuyRequests(req, env) {
@@ -1785,12 +1813,15 @@ async function handleExchangeBuyRequests(req, env) {
 
   const idxKey = `buyreq_idx:${user.tgId}`;
   const idx = (await kvGet(env, idxKey)) || [];
-  const requests = [];
+  const items = [];
   for (const id of idx.slice(0, 20)) {
     const r = await kvGet(env, `buyreq:${user.tgId}:${id}`);
-    if (r) requests.push(r);
+    if (!r) continue;
+    let st = r.status || "PENDING";
+    if (st === "PENDING" && now() - Number(r.createdAt || 0) > BUY_REQ_TTL_MS) st = "EXPIRED";
+    items.push({ ...r, status: st });
   }
-  return json({ ok: true, requests });
+  return json({ ok: true, items });
 }
 
 async function handleAdminExchangeRequests(req, env) {

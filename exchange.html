@@ -64,6 +64,20 @@ h1 { font-size: 20px; font-weight: 700; color: var(--accent); }
 .buy-btn { padding: 8px 18px; border-radius: 10px; font-size: 13px; font-weight: 600; background: linear-gradient(135deg, #e8d5b7, #d4b896); color: #0a1628; border: none; cursor: pointer; }
 .buy-btn:active { opacity: .8; }
 
+/* Request banner */
+.request-banner {
+  margin-top: 16px; padding: 14px 16px; border-radius: 16px;
+  background: var(--card); border: 1px solid var(--border);
+  display: flex; justify-content: space-between; align-items: center; gap: 10px;
+}
+.request-banner-text { font-size: 13px; color: var(--muted); line-height: 1.4; }
+.request-banner-text b { color: var(--accent); display: block; margin-bottom: 2px; }
+.request-banner-btn {
+  padding: 9px 16px; border-radius: 10px; font-size: 13px; font-weight: 600; white-space: nowrap;
+  background: var(--card2); border: 1px solid var(--border); color: var(--accent2); cursor: pointer; flex-shrink: 0;
+}
+.request-banner-btn:active { opacity: .8; }
+
 /* Deal */
 .deal-card { background: var(--card); border: 1px solid var(--border); border-radius: 20px; padding: 20px; }
 .deal-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; }
@@ -116,36 +130,26 @@ h1 { font-size: 20px; font-weight: 700; color: var(--accent); }
 
 .back-offers-btn { width: 100%; padding: 14px; border-radius: 14px; font-size: 15px; font-weight: 600; background: var(--card2); border: 1px solid var(--border); color: var(--accent); cursor: pointer; }
 
-/* Request form */
-.request-banner {
-  margin-top: 16px; padding: 14px 16px; border-radius: 16px;
-  background: var(--card); border: 1px solid var(--border);
-  display: flex; justify-content: space-between; align-items: center; gap: 10px;
-}
-.request-banner-text { font-size: 13px; color: var(--muted); line-height: 1.4; }
-.request-banner-text b { color: var(--accent); display: block; margin-bottom: 2px; }
-.request-banner-btn {
-  padding: 9px 16px; border-radius: 10px; font-size: 13px; font-weight: 600; white-space: nowrap;
-  background: var(--card2); border: 1px solid var(--border); color: var(--accent2); cursor: pointer; flex-shrink: 0;
-}
-.request-banner-btn:active { opacity: .8; }
-
+/* ── Request form ─────────────────────────────── */
 .req-form-card { background: var(--card); border: 1px solid var(--border); border-radius: 20px; padding: 20px; }
 .req-form-title { font-size: 17px; font-weight: 700; color: var(--accent); margin-bottom: 6px; }
-.req-form-desc { font-size: 13px; color: var(--muted); margin-bottom: 20px; line-height: 1.5; }
-.input-group { margin-bottom: 16px; }
-.input-label { font-size: 12px; color: var(--muted); margin-bottom: 6px; font-weight: 500; }
-.amount-input-wrap { position: relative; }
-.amount-input {
-  width: 100%; padding: 14px 48px 14px 16px; border-radius: 12px;
-  background: var(--card2); border: 1px solid var(--border);
-  color: var(--text); font-size: 18px; font-weight: 700; outline: none;
+.req-form-desc { font-size: 13px; color: var(--muted); margin-bottom: 18px; line-height: 1.5; }
+
+.req-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 12px; }
+.req-grid.span1 { grid-template-columns: 1fr; }
+.field-box { background: rgba(255,255,255,.04); border: 1px solid var(--border); border-radius: 14px; padding: 10px 12px; }
+.field-label { font-size: 11px; font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: .05em; margin-bottom: 6px; }
+.field-input {
+  width: 100%; border: 0; outline: none; background: transparent;
+  color: var(--text); font-size: 16px; font-weight: 700;
 }
-.amount-input:focus { border-color: var(--accent2); }
-.amount-input::placeholder { color: var(--muted); font-size: 14px; font-weight: 400; }
-.input-suffix { position: absolute; right: 14px; top: 50%; transform: translateY(-50%); color: var(--muted); font-size: 14px; }
-.amount-hint { font-size: 12px; color: var(--muted); margin-top: 6px; }
-.amount-hint em { color: var(--accent2); font-style: normal; }
+.field-input::placeholder { color: var(--muted); font-weight: 400; font-size: 14px; }
+.field-select {
+  width: 100%; border: 0; outline: none; background: transparent;
+  color: var(--text); font-size: 16px; font-weight: 700;
+  appearance: none; -webkit-appearance: none; cursor: pointer;
+}
+.field-select option { background: #0f1d35; color: var(--text); }
 
 .submit-req-btn {
   width: 100%; padding: 15px; border-radius: 14px; font-size: 15px; font-weight: 700;
@@ -155,15 +159,117 @@ h1 { font-size: 20px; font-weight: 700; color: var(--accent); }
 .submit-req-btn:disabled { opacity: .5; cursor: default; }
 .req-back-link { display: block; text-align: center; margin-top: 12px; font-size: 13px; color: var(--muted); cursor: pointer; text-decoration: underline; text-underline-offset: 3px; }
 
-/* Request sent */
-.req-sent-card { background: var(--card); border: 1px solid var(--border); border-radius: 20px; padding: 28px 20px; text-align: center; }
-.req-sent-icon { font-size: 52px; margin-bottom: 14px; }
-.req-sent-title { font-size: 18px; font-weight: 700; color: var(--accent); margin-bottom: 8px; }
-.req-sent-desc { font-size: 14px; color: var(--muted); line-height: 1.6; margin-bottom: 24px; }
-.req-sent-info { background: var(--card2); border: 1px solid var(--border); border-radius: 12px; padding: 14px; margin-bottom: 20px; text-align: left; }
-.req-sent-row { display: flex; justify-content: space-between; padding: 5px 0; font-size: 13px; }
-.req-sent-row span:first-child { color: var(--muted); }
-.req-sent-row span:last-child { font-weight: 600; }
+/* Active requests inside the form screen */
+.active-reqs { margin-bottom: 16px; display: flex; flex-direction: column; gap: 8px; }
+.req-item { border: 1px solid var(--border); background: rgba(255,255,255,.03); border-radius: 14px; padding: 12px 14px; }
+.req-item-top { display: flex; justify-content: space-between; align-items: center; gap: 8px; margin-bottom: 8px; }
+.req-range { font-size: 15px; font-weight: 700; }
+.req-chip { display: inline-flex; align-items: center; padding: 4px 10px; border-radius: 999px; font-size: 11px; font-weight: 600; border: 1px solid rgba(74,222,128,.3); background: rgba(74,222,128,.08); color: var(--green); }
+.req-meta { display: flex; flex-wrap: wrap; gap: 5px 14px; margin-bottom: 8px; }
+.req-meta-item { font-size: 12px; color: var(--muted); }
+.req-meta-item b { color: var(--text); }
+
+/* Timer bar */
+.timer-bar {
+  display: flex; align-items: center; gap: 8px; padding: 7px 10px;
+  border-radius: 10px; background: rgba(251,191,36,.05); border: 1px solid rgba(251,191,36,.15);
+  margin-bottom: 8px;
+}
+.timer-bar.danger { background: rgba(248,113,113,.06); border-color: rgba(248,113,113,.2); }
+.timer-bar-icon { font-size: 14px; flex-shrink: 0; }
+.timer-bar-text { font-size: 12px; font-weight: 700; color: var(--yellow); flex-shrink: 0; }
+.timer-bar.danger .timer-bar-text { color: var(--red); }
+.timer-bar-track { flex: 1; height: 4px; border-radius: 2px; background: rgba(255,255,255,.08); overflow: hidden; }
+.timer-bar-fill { height: 100%; border-radius: 2px; background: linear-gradient(90deg, var(--yellow), #fbbf24); transition: width 1s linear; }
+.timer-bar.danger .timer-bar-fill { background: linear-gradient(90deg, var(--red), #f87171); }
+
+/* Search/Found animations */
+.search-anim {
+  display: flex; align-items: center; gap: 8px; padding: 9px 12px;
+  border-radius: 10px; background: rgba(30,60,114,.12); border: 1px solid rgba(60,100,200,.2);
+  margin-bottom: 8px;
+}
+.search-dots { display: flex; gap: 4px; align-items: center; }
+.search-dots span {
+  width: 6px; height: 6px; border-radius: 50%;
+  background: rgba(140,170,255,.8);
+  animation: dotPulse 1.4s ease-in-out infinite;
+}
+.search-dots span:nth-child(2) { animation-delay: .2s; }
+.search-dots span:nth-child(3) { animation-delay: .4s; }
+@keyframes dotPulse { 0%,80%,100%{opacity:.25; transform:scale(.8)} 40%{opacity:1; transform:scale(1.2)} }
+.search-text { font-size: 12px; font-weight: 700; color: rgba(140,170,255,.85); }
+
+.found-anim {
+  display: flex; align-items: center; gap: 8px; padding: 9px 12px;
+  border-radius: 10px; background: rgba(74,222,128,.06); border: 1px solid rgba(74,222,128,.25);
+  margin-bottom: 8px;
+  animation: foundGlow 2s ease infinite;
+}
+@keyframes foundGlow { 0%,100%{border-color:rgba(74,222,128,.25)} 50%{border-color:rgba(74,222,128,.5); box-shadow:0 0 14px rgba(74,222,128,.1)} }
+.found-text { font-size: 13px; font-weight: 700; color: var(--green); }
+
+.req-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.req-btn {
+  border: 0; border-radius: 12px; padding: 11px 12px;
+  font-weight: 700; font-size: 13px; cursor: pointer; color: var(--text);
+  display: flex; align-items: center; justify-content: center;
+  text-decoration: none; transition: opacity .15s;
+}
+.req-btn:active { opacity: .8; }
+.req-btn:disabled { opacity: .45; cursor: not-allowed; }
+.req-btn-go { background: linear-gradient(135deg, #4ade80, #22c55e); color: #0a2010; box-shadow: 0 6px 18px rgba(74,222,128,.2); }
+.req-btn-stop { background: rgba(255,255,255,.04); border: 1px solid var(--border); color: var(--muted); }
+.req-btn-stop:hover { color: var(--red); border-color: rgba(248,113,113,.3); }
+
+/* ── Wait screen ───────────────────────────────── */
+.wait-card { background: var(--card); border: 1px solid var(--border); border-radius: 20px; overflow: hidden; }
+.wait-topbar { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 14px 16px 10px; }
+.wait-back { border: 1px solid var(--border); background: var(--card2); color: var(--accent); padding: 8px 12px; border-radius: 999px; font-size: 13px; font-weight: 600; cursor: pointer; white-space: nowrap; }
+.wait-content { padding: 0 16px 18px; }
+.wait-title { font-size: 17px; font-weight: 700; color: var(--accent); margin-bottom: 4px; }
+.wait-sub { font-size: 13px; color: var(--muted); line-height: 1.4; margin-bottom: 14px; }
+
+.status-card {
+  position: relative; overflow: hidden; border-radius: 14px;
+  border: 1px solid rgba(255,255,255,.1);
+  background: linear-gradient(180deg, rgba(255,255,255,.05), rgba(30,60,114,.1));
+  padding: 14px;
+}
+.status-card::before {
+  content: ""; position: absolute; inset: -2px;
+  background: radial-gradient(400px 140px at 20% 30%, rgba(30,60,114,.3), transparent 60%),
+              radial-gradient(400px 140px at 80% 70%, rgba(60,100,200,.2), transparent 60%);
+  pointer-events: none; animation: glowMove 5.4s ease-in-out infinite;
+}
+@keyframes glowMove { 0%{transform:translateY(0)} 50%{transform:translateY(-5px)} 100%{transform:translateY(0)} }
+.status-pill {
+  display: inline-flex; align-items: center; padding: 6px 12px;
+  border-radius: 999px; border: 1px solid rgba(255,255,255,.12); background: rgba(255,255,255,.05);
+  font-size: 12px; font-weight: 700; position: relative; z-index: 1;
+}
+.status-pill.pending { color: var(--yellow); }
+.status-pill.found { color: var(--green); }
+.status-pill.expired { color: var(--red); }
+.status-main { position: relative; z-index: 1; font-size: 15px; font-weight: 700; margin-top: 8px; }
+.status-desc { position: relative; z-index: 1; font-size: 12px; color: var(--muted); margin-top: 4px; line-height: 1.4; }
+
+.offer-found-box { display: none; margin-top: 10px; border-radius: 12px; border: 1px solid rgba(255,255,255,.1); background: rgba(10,22,40,.5); padding: 12px; }
+.offer-found-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 8px; }
+.offer-found-cell { background: rgba(255,255,255,.04); border: 1px solid var(--border); border-radius: 10px; padding: 8px 10px; }
+.offer-found-key { font-size: 10px; color: var(--muted); text-transform: uppercase; letter-spacing: .05em; margin-bottom: 3px; }
+.offer-found-val { font-size: 13px; font-weight: 700; }
+
+.wait-hint { margin-top: 10px; padding: 10px 12px; border-radius: 12px; border: 1px dashed rgba(255,255,255,.12); background: rgba(255,255,255,.03); font-size: 12px; color: var(--muted); line-height: 1.4; }
+
+.wait-actions { margin-top: 12px; display: flex; gap: 8px; }
+.wait-btn {
+  flex: 1; padding: 12px; border-radius: 12px; font-size: 14px; font-weight: 700;
+  border: 0; cursor: pointer; color: var(--text); text-align: center; text-decoration: none;
+  display: flex; align-items: center; justify-content: center;
+}
+.wait-btn-primary { background: linear-gradient(135deg, #e8d5b7, #d4b896); color: #0a1628; }
+.wait-btn-ghost { background: rgba(255,255,255,.04); border: 1px solid var(--border); color: var(--muted); }
 
 /* Toast */
 .toast { position: fixed; bottom: 30px; left: 50%; transform: translateX(-50%); background: rgba(15,29,53,.97); border: 1px solid var(--border); color: var(--text); padding: 10px 20px; border-radius: 12px; font-size: 14px; white-space: nowrap; z-index: 100; opacity: 0; transition: opacity .2s; pointer-events: none; }
@@ -201,7 +307,7 @@ h1 { font-size: 20px; font-weight: 700; color: var(--accent); }
         <b>Нужна конкретная сумма?</b>
         Оставьте запрос — оператор подберёт условия
       </div>
-      <button class="request-banner-btn" onclick="showRequestForm()">Запрос</button>
+      <button class="request-banner-btn" onclick="showRequestScreen()">Запрос</button>
     </div>
   </div>
 
@@ -214,7 +320,7 @@ h1 { font-size: 20px; font-weight: 700; color: var(--accent); }
         <b>Нужна другая сумма?</b>
         Оставьте запрос — оператор свяжется с вами
       </div>
-      <button class="request-banner-btn" onclick="showRequestForm()">Запрос</button>
+      <button class="request-banner-btn" onclick="showRequestScreen()">Запрос</button>
     </div>
   </div>
 
@@ -264,32 +370,78 @@ h1 { font-size: 20px; font-weight: 700; color: var(--accent); }
     </div>
   </div>
 
-  <!-- Request form -->
+  <!-- Request form (with active requests on top) -->
   <div class="screen" id="screenRequest">
     <div class="req-form-card">
-      <div class="req-form-title">💬 Запрос на сумму</div>
-      <div class="req-form-desc">Не нашли подходящее предложение? Укажите нужную сумму — оператор подберёт условия и напишет вам в Telegram.</div>
-      <div class="input-group">
-        <div class="input-label">Сумма в рублях</div>
-        <div class="amount-input-wrap">
-          <input class="amount-input" type="number" id="reqAmount" placeholder="10 000" inputmode="numeric" min="100" max="5000000" oninput="onReqAmountInput()">
-          <span class="input-suffix">₽</span>
-        </div>
-        <div class="amount-hint" id="reqAmountHint">&nbsp;</div>
+      <div class="req-form-title">💬 Запрос на покупку</div>
+      <div class="req-form-desc">Укажите диапазон суммы и количество ордеров. Оператор найдёт подходящее предложение — у вас будет <b>7 минут</b> чтобы взять заявку в работу.</div>
+
+      <!-- Active requests list -->
+      <div id="activeReqsWrap" style="display:none">
+        <div class="section-title" style="margin-bottom:8px">Активные запросы</div>
+        <div class="active-reqs" id="activeReqsList"></div>
       </div>
+
+      <div class="section-title" style="margin-bottom:8px">Новый запрос</div>
+      <div class="req-grid">
+        <div class="field-box">
+          <div class="field-label">Минимум (₽)</div>
+          <input class="field-input" type="number" id="reqMin" placeholder="10 000" inputmode="numeric" min="100">
+        </div>
+        <div class="field-box">
+          <div class="field-label">Максимум (₽)</div>
+          <input class="field-input" type="number" id="reqMax" placeholder="50 000" inputmode="numeric" min="100">
+        </div>
+      </div>
+      <div class="req-grid req-grid-span1" style="grid-template-columns:1fr; margin-bottom:14px">
+        <div class="field-box">
+          <div class="field-label">Количество ордеров</div>
+          <select class="field-select" id="reqCount">
+            <option value="1" selected>1</option>
+            <option value="2">2</option>
+            <option value="3">3</option>
+            <option value="4">4</option>
+            <option value="5">5</option>
+          </select>
+        </div>
+      </div>
+
       <button class="submit-req-btn" id="submitReqBtn" onclick="submitRequest()">Отправить запрос</button>
-      <span class="req-back-link" onclick="loadOffers()">← Назад к предложениям</span>
+      <span class="req-back-link" id="reqBackLink" onclick="loadOffers()">← Назад к предложениям</span>
     </div>
   </div>
 
-  <!-- Request sent -->
-  <div class="screen" id="screenReqSent">
-    <div class="req-sent-card">
-      <div class="req-sent-icon">📨</div>
-      <div class="req-sent-title">Запрос отправлен!</div>
-      <div class="req-sent-desc">Ваш запрос получен. Оператор свяжется с вами в Telegram и предложит условия обмена.</div>
-      <div class="req-sent-info" id="reqSentInfo"></div>
-      <button class="back-offers-btn" onclick="loadOffers()">← К предложениям</button>
+  <!-- Wait screen (after request submitted) -->
+  <div class="screen" id="screenReqWait">
+    <div class="wait-card">
+      <div class="wait-topbar">
+        <button class="wait-back" onclick="showRequestScreen()">← Назад</button>
+      </div>
+      <div class="wait-content">
+        <div class="wait-title">Ожидание решения</div>
+        <p class="wait-sub">Мы ищем подходящее предложение в стакане. Статус обновится автоматически.</p>
+
+        <div class="status-card">
+          <span class="status-pill pending" id="waitPill">⏳ Ищем предложение</span>
+          <div class="status-main" id="waitMain">Запрос принят, подбираем заявку…</div>
+          <div class="status-desc" id="waitDesc">Проверяем стакан и уведомим, когда появится совпадение 🤝</div>
+
+          <div class="offer-found-box" id="offerFoundBox">
+            <div class="found-anim" style="margin-bottom:0">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none"><path d="M9 12l2 2 4-4" stroke="rgba(74,222,128,.95)" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/><circle cx="12" cy="12" r="10" stroke="rgba(74,222,128,.95)" stroke-width="2"/></svg>
+              <span class="found-text">Подходящая заявка найдена!</span>
+            </div>
+            <div class="offer-found-grid" id="offerFoundGrid"></div>
+          </div>
+        </div>
+
+        <div class="wait-hint" id="waitHint">⏰ У вас 7 минут чтобы взять заявку в работу. Совет: расширьте диапазон на 5–10% для быстрого совпадения.</div>
+
+        <div class="wait-actions" id="waitActions" style="display:none">
+          <button class="wait-btn wait-btn-primary" id="waitGoBtn" onclick="goToFoundDeal()">🚀 Перейти к сделке</button>
+          <button class="wait-btn wait-btn-ghost" onclick="showRequestScreen()">Новый запрос</button>
+        </div>
+      </div>
     </div>
   </div>
 </div>
@@ -298,10 +450,17 @@ h1 { font-size: 20px; font-weight: 700; color: var(--accent); }
 
 <script>
 const API = '';
+const CF_BASE = 'https://api.crossflag.org';
+const REQUEST_TTL_MS = 7 * 60 * 1000;
+
 let rate = 0;
 let deal = null;
 let timerInt = null;
 let keepAliveInt = null;
+let currentReq = null;   // active buy request {id, minRub, maxRub, count, createdAt}
+let waitPollInt = null;
+let waitTimerInt = null;
+let foundOffer = null;   // matching offer found while waiting
 
 function getToken() {
   try { return localStorage.getItem('mw_token') || sessionStorage.getItem('mw_token') || ''; }
@@ -329,11 +488,13 @@ function toast(msg, ms = 2600) {
 }
 
 function fmtRub(n) { return Number(n || 0).toLocaleString('ru-RU'); }
+function parseNum(s) { return Math.floor(Number(String(s || '').replace(/[^\d]/g, '')) || 0); }
 
 function methodLabel(m) {
   return { SBP: '⚡ СБП', CARD: '💳 Карта', QR: '🔳 QR', BANK: '🏦 Банк' }[String(m || '').toUpperCase()] || String(m || '—');
 }
 
+// ══ Offers ══════════════════════════════════════════════
 async function loadOffers() {
   show('screenLoading');
   try {
@@ -463,7 +624,7 @@ async function markPaid() {
   const btn = document.getElementById('paidBtn');
   btn.disabled = true; btn.textContent = 'Отправляем…';
   try {
-    const d = await api('/api/exchange/mark_paid', { method: 'POST', body: JSON.stringify({ id: deal.offerId, reserveId: deal.reserveId }) });
+    await api('/api/exchange/mark_paid', { method: 'POST', body: JSON.stringify({ id: deal.offerId, reserveId: deal.reserveId }) });
     clearInterval(timerInt); clearInterval(keepAliveInt);
     if (deal.address) { document.getElementById('addrText').textContent = deal.address; document.getElementById('addrBlock').style.display = ''; }
     show('screenPending');
@@ -485,62 +646,260 @@ function copyText(t) { navigator.clipboard?.writeText(t).catch(()=>{}); toast('�
 function copyAddr() { copyText(document.getElementById('addrText').textContent); }
 function startOver() { clearInterval(timerInt); clearInterval(keepAliveInt); deal = null; loadOffers(); }
 
-function showRequestForm() {
-  document.getElementById('reqAmount').value = '';
-  document.getElementById('reqAmountHint').innerHTML = '&nbsp;';
-  document.getElementById('submitReqBtn').disabled = false;
-  document.getElementById('submitReqBtn').textContent = 'Отправить запрос';
+// ══ Request form ═════════════════════════════════════════
+async function showRequestScreen() {
+  stopWaitPolling();
+  currentReq = null;
+  foundOffer = null;
   show('screenRequest');
+  await loadActiveRequests();
 }
 
-function onReqAmountInput() {
-  const val = Number(document.getElementById('reqAmount').value);
-  const hint = document.getElementById('reqAmountHint');
-  if (!val) { hint.innerHTML = '&nbsp;'; return; }
-  if (val < 100) { hint.innerHTML = '<span style="color:var(--red)">Минимум 100 ₽</span>'; return; }
-  if (val > 5000000) { hint.innerHTML = '<span style="color:var(--red)">Максимум 5 000 000 ₽</span>'; return; }
-  if (rate > 0) {
-    const usdt = (val / rate).toFixed(2);
-    hint.innerHTML = '≈ <em>' + usdt + ' USDT</em> по текущему курсу';
-  } else {
-    hint.innerHTML = '&nbsp;';
-  }
+async function loadActiveRequests() {
+  try {
+    const d = await api('/api/exchange/buy_requests');
+    const items = Array.isArray(d?.items) ? d.items : [];
+    const active = items.filter(r => r.status === 'PENDING');
+    active.sort((a,b) => Number(b.createdAt||0) - Number(a.createdAt||0));
+
+    const wrap = document.getElementById('activeReqsWrap');
+    const list = document.getElementById('activeReqsList');
+    if (!active.length) { wrap.style.display = 'none'; return; }
+    wrap.style.display = '';
+    list.innerHTML = '';
+
+    for (const req of active) {
+      const elapsed = Date.now() - Number(req.createdAt || 0);
+      const msLeft = Math.max(0, REQUEST_TTL_MS - elapsed);
+      const pct = Math.max(0, Math.min(100, (msLeft / REQUEST_TTL_MS) * 100));
+      const m = Math.floor(msLeft / 60000), s = Math.floor((msLeft % 60000) / 1000);
+      const timeStr = msLeft <= 0 ? 'Время вышло' : m + ':' + String(s).padStart(2,'0');
+      const danger = msLeft < 2 * 60 * 1000;
+
+      const el = document.createElement('div');
+      el.className = 'req-item';
+      el.innerHTML =
+        '<div class="req-item-top">' +
+          '<div class="req-range">' + fmtRub(req.minRub) + ' — ' + fmtRub(req.maxRub) + ' ₽</div>' +
+          '<span class="req-chip">Активен</span>' +
+        '</div>' +
+        '<div class="req-meta">' +
+          '<span class="req-meta-item">Ордеров: <b>' + (req.matchedOffersCount||0) + '/' + (req.count||1) + '</b></span>' +
+          (req.approxRate ? '<span class="req-meta-item">Курс: <b>≈' + Number(req.approxRate).toFixed(2) + ' ₽</b></span>' : '') +
+        '</div>' +
+        '<div class="timer-bar' + (danger ? ' danger' : '') + '">' +
+          '<span class="timer-bar-icon">' + (danger ? '🔴' : '⏱️') + '</span>' +
+          '<span class="timer-bar-text">' + timeStr + '</span>' +
+          '<div class="timer-bar-track"><div class="timer-bar-fill" style="width:' + pct + '%"></div></div>' +
+        '</div>' +
+        '<div class="req-actions">' +
+          '<button class="req-btn req-btn-stop" data-cancel="' + req.id + '">Остановить</button>' +
+          '<button class="req-btn req-btn-go" data-watch="' + req.id + '" data-min="' + req.minRub + '" data-max="' + req.maxRub + '">Следить</button>' +
+        '</div>';
+      list.appendChild(el);
+    }
+
+    list.querySelectorAll('[data-cancel]').forEach(btn => {
+      btn.addEventListener('click', async () => {
+        const id = btn.getAttribute('data-cancel');
+        btn.disabled = true; btn.textContent = 'Останавливаю…';
+        try {
+          await api('/api/exchange/buy_request/cancel', { method: 'POST', body: JSON.stringify({ id }) });
+          await loadActiveRequests();
+        } catch {
+          btn.disabled = false; btn.textContent = 'Остановить';
+        }
+      });
+    });
+
+    list.querySelectorAll('[data-watch]').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const id = btn.getAttribute('data-watch');
+        const minRub = Number(btn.getAttribute('data-min'));
+        const maxRub = Number(btn.getAttribute('data-max'));
+        const rec = active.find(r => r.id === id);
+        currentReq = { id, minRub, maxRub, count: rec?.count || 1, createdAt: rec?.createdAt || Date.now() };
+        startWaiting();
+      });
+    });
+  } catch {}
 }
 
 async function submitRequest() {
-  const amountRub = Number(document.getElementById('reqAmount').value);
-  if (!amountRub || amountRub < 100) { toast('Введите сумму от 100 ₽'); return; }
-  if (amountRub > 5000000) { toast('Максимум 5 000 000 ₽'); return; }
+  const minRub = parseNum(document.getElementById('reqMin').value);
+  const maxRub = parseNum(document.getElementById('reqMax').value);
+  const count = Number(document.getElementById('reqCount').value || 1);
+
+  if (!minRub || minRub < 100) { toast('Введите минимальную сумму от 100 ₽'); return; }
+  if (!maxRub || maxRub < minRub) { toast('Максимум должен быть ≥ минимума'); return; }
+  if (maxRub > 5000000) { toast('Максимум 5 000 000 ₽'); return; }
 
   const btn = document.getElementById('submitReqBtn');
-  btn.disabled = true;
-  btn.textContent = 'Отправляем…';
+  btn.disabled = true; btn.textContent = 'Отправляем…';
 
   try {
     const d = await api('/api/exchange/buy_request', {
       method: 'POST',
-      body: JSON.stringify({ amountRub })
+      body: JSON.stringify({ minRub, maxRub, count })
     });
     if (!d?.ok) {
       toast(d?.error || 'Ошибка отправки запроса');
-      btn.disabled = false;
-      btn.textContent = 'Отправить запрос';
+      btn.disabled = false; btn.textContent = 'Отправить запрос';
       return;
     }
-
-    // Show confirmation screen
-    const info = document.getElementById('reqSentInfo');
-    const approxUsdt = d.approxRate > 0 ? (amountRub / d.approxRate).toFixed(2) : '—';
-    info.innerHTML =
-      '<div class="req-sent-row"><span>Сумма</span><span>' + fmtRub(amountRub) + ' ₽</span></div>' +
-      '<div class="req-sent-row"><span>≈ USDT</span><span>' + approxUsdt + ' USDT</span></div>' +
-      (d.id ? '<div class="req-sent-row"><span>Номер заявки</span><span style="color:var(--muted);font-size:11px">#' + String(d.id).slice(-8) + '</span></div>' : '');
-    show('screenReqSent');
+    currentReq = { id: d.id, minRub, maxRub, count, createdAt: d.createdAt || Date.now(), approxRate: d.approxRate };
+    document.getElementById('reqMin').value = '';
+    document.getElementById('reqMax').value = '';
+    document.getElementById('reqCount').value = '1';
+    btn.disabled = false; btn.textContent = 'Отправить запрос';
+    startWaiting();
   } catch(e) {
     toast('Ошибка: ' + (e.message || 'попробуйте ещё раз'));
-    btn.disabled = false;
-    btn.textContent = 'Отправить запрос';
+    btn.disabled = false; btn.textContent = 'Отправить запрос';
   }
+}
+
+// ══ Wait screen ══════════════════════════════════════════
+function startWaiting() {
+  foundOffer = null;
+  stopWaitPolling();
+
+  const pill = document.getElementById('waitPill');
+  const main = document.getElementById('waitMain');
+  const desc = document.getElementById('waitDesc');
+  const hint = document.getElementById('waitHint');
+  const actions = document.getElementById('waitActions');
+  const box = document.getElementById('offerFoundBox');
+
+  pill.className = 'status-pill pending'; pill.textContent = '⏳ Ищем предложение';
+  main.textContent = 'Запрос принят, подбираем заявку…';
+  desc.textContent = 'Проверяем стакан и уведомим, когда появится совпадение 🤝';
+  hint.textContent = '⏰ У вас 7 минут чтобы взять заявку в работу. Совет: расширьте диапазон на 5–10% для быстрого совпадения.';
+  hint.style.display = '';
+  actions.style.display = 'none';
+  box.style.display = 'none';
+
+  show('screenReqWait');
+
+  // Timer countdown
+  waitTimerInt = setInterval(() => {
+    if (!currentReq) return;
+    const elapsed = Date.now() - Number(currentReq.createdAt || 0);
+    const msLeft = Math.max(0, REQUEST_TTL_MS - elapsed);
+    if (msLeft <= 0) {
+      clearInterval(waitTimerInt);
+      setWaitExpired();
+    }
+  }, 1000);
+
+  // Poll for matching offers every 5 sec
+  pollForMatch();
+  waitPollInt = setInterval(pollForMatch, 5000);
+}
+
+function stopWaitPolling() {
+  clearInterval(waitPollInt);
+  clearInterval(waitTimerInt);
+}
+
+async function pollForMatch() {
+  if (!currentReq || foundOffer) return;
+  const elapsed = Date.now() - Number(currentReq.createdAt || 0);
+  if (elapsed >= REQUEST_TTL_MS) { setWaitExpired(); return; }
+
+  try {
+    // Check Moon Wallet offers
+    const d = await api('/api/exchange/offers');
+    const offers = Array.isArray(d?.offers) ? d.offers : [];
+    const min = Number(currentReq.minRub), max = Number(currentReq.maxRub);
+    let best = null, bestScore = Infinity, mid = (min + max) / 2;
+    for (const o of offers) {
+      const a = Number(o.amountRub);
+      if (!isFinite(a) || a < min || a > max) continue;
+      const score = Math.abs(a - mid);
+      if (score < bestScore) { bestScore = score; best = o; }
+    }
+    if (best) { foundOffer = best; setWaitFound(best); stopWaitPolling(); return; }
+  } catch {}
+
+  // Also check crossflag directly
+  try {
+    const r = await fetch(CF_BASE + '/api/public/buy_offers');
+    const jj = await r.json().catch(() => null);
+    if (!r.ok || !jj?.ok || !Array.isArray(jj.offers)) return;
+    const min = Number(currentReq.minRub), max = Number(currentReq.maxRub);
+    let best = null, bestScore = Infinity, mid = (min + max) / 2;
+    for (const o of jj.offers) {
+      const a = Number(o.amountRub);
+      if (!isFinite(a) || a < min || a > max) continue;
+      const score = Math.abs(a - mid);
+      if (score < bestScore) { bestScore = score; best = o; }
+    }
+    if (best) { foundOffer = best; setWaitFound(best); stopWaitPolling(); }
+  } catch {}
+}
+
+function setWaitFound(offer) {
+  const pill = document.getElementById('waitPill');
+  const main = document.getElementById('waitMain');
+  const desc = document.getElementById('waitDesc');
+  const hint = document.getElementById('waitHint');
+  const actions = document.getElementById('waitActions');
+  const box = document.getElementById('offerFoundBox');
+  const grid = document.getElementById('offerFoundGrid');
+
+  pill.className = 'status-pill found'; pill.textContent = '🎯 Найдено';
+  main.textContent = 'Нашлась заявка в стакане!';
+  desc.textContent = 'Мы нашли предложение в вашем диапазоне. Нажмите «Перейти к сделке» и оплатите.';
+  hint.textContent = '💡 Предложения в P2P могут быстро разбираться. Если не успели — обновите стакан и попробуйте снова.';
+
+  const r = Number(offer.rate || rate || 0);
+  const usdt = r > 0 ? (Number(offer.amountRub||0)/r).toFixed(2) : '—';
+  grid.innerHTML =
+    cell('Сумма', fmtRub(offer.amountRub) + ' ₽') +
+    cell('≈ USDT', usdt) +
+    cell('Курс', r > 0 ? r.toFixed(2) + ' ₽' : '—') +
+    cell('Метод', methodLabel(offer.method));
+  box.style.display = '';
+
+  document.getElementById('waitGoBtn').style.display = '';
+  actions.style.display = 'flex';
+
+  // Sound notification
+  try {
+    const ctx = new (window.AudioContext || window.webkitAudioContext)();
+    const osc = ctx.createOscillator(), gain = ctx.createGain();
+    osc.connect(gain); gain.connect(ctx.destination);
+    osc.frequency.setValueAtTime(880, ctx.currentTime);
+    gain.gain.setValueAtTime(0.1, ctx.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.4);
+    osc.start(ctx.currentTime); osc.stop(ctx.currentTime + 0.4);
+  } catch {}
+}
+
+function cell(k, v) {
+  return '<div class="offer-found-cell"><div class="offer-found-key">' + k + '</div><div class="offer-found-val">' + v + '</div></div>';
+}
+
+function setWaitExpired() {
+  stopWaitPolling();
+  const pill = document.getElementById('waitPill');
+  const main = document.getElementById('waitMain');
+  const desc = document.getElementById('waitDesc');
+  const hint = document.getElementById('waitHint');
+  const actions = document.getElementById('waitActions');
+
+  pill.className = 'status-pill expired'; pill.textContent = '⏰ Время вышло';
+  main.textContent = 'Заявка удалена — время истекло';
+  desc.textContent = 'Прошло 7 минут — заявку никто не взял, она удалена автоматически.';
+  hint.textContent = '💡 Расширьте диапазон на 2–5 тыс. ₽ или проверьте предложения напрямую в стакане.';
+  document.getElementById('waitGoBtn').style.display = 'none';
+  actions.style.display = 'flex';
+}
+
+async function goToFoundDeal() {
+  if (!foundOffer) { await loadOffers(); return; }
+  await reserveOffer(foundOffer);
 }
 
 loadOffers();
