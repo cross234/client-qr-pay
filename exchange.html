@@ -463,8 +463,12 @@ let waitTimerInt = null;
 let foundOffer = null;   // matching offer found while waiting
 
 function getToken() {
-  try { return localStorage.getItem('mw_token') || sessionStorage.getItem('mw_token') || ''; }
-  catch { return ''; }
+  try {
+    return localStorage.getItem('auth_token') ||
+           localStorage.getItem('mw_token') ||
+           sessionStorage.getItem('auth_token') ||
+           sessionStorage.getItem('mw_token') || '';
+  } catch { return ''; }
 }
 
 async function api(path, opts = {}) {
