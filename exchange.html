@@ -449,7 +449,7 @@ h1 { font-size: 20px; font-weight: 700; color: var(--accent); }
 <div class="toast" id="toast"></div>
 
 <script>
-const API = '';
+const API = (localStorage.getItem('worker_base') || 'https://client-qr-pay.kireeshka73.workers.dev').replace(/\/+$/, '');
 const CF_BASE = 'https://api.crossflag.org';
 const REQUEST_TTL_MS = 7 * 60 * 1000;
 
