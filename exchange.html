@@ -116,6 +116,55 @@ h1 { font-size: 20px; font-weight: 700; color: var(--accent); }
 
 .back-offers-btn { width: 100%; padding: 14px; border-radius: 14px; font-size: 15px; font-weight: 600; background: var(--card2); border: 1px solid var(--border); color: var(--accent); cursor: pointer; }
 
+/* Request form */
+.request-banner {
+  margin-top: 16px; padding: 14px 16px; border-radius: 16px;
+  background: var(--card); border: 1px solid var(--border);
+  display: flex; justify-content: space-between; align-items: center; gap: 10px;
+}
+.request-banner-text { font-size: 13px; color: var(--muted); line-height: 1.4; }
+.request-banner-text b { color: var(--accent); display: block; margin-bottom: 2px; }
+.request-banner-btn {
+  padding: 9px 16px; border-radius: 10px; font-size: 13px; font-weight: 600; white-space: nowrap;
+  background: var(--card2); border: 1px solid var(--border); color: var(--accent2); cursor: pointer; flex-shrink: 0;
+}
+.request-banner-btn:active { opacity: .8; }
+
+.req-form-card { background: var(--card); border: 1px solid var(--border); border-radius: 20px; padding: 20px; }
+.req-form-title { font-size: 17px; font-weight: 700; color: var(--accent); margin-bottom: 6px; }
+.req-form-desc { font-size: 13px; color: var(--muted); margin-bottom: 20px; line-height: 1.5; }
+.input-group { margin-bottom: 16px; }
+.input-label { font-size: 12px; color: var(--muted); margin-bottom: 6px; font-weight: 500; }
+.amount-input-wrap { position: relative; }
+.amount-input {
+  width: 100%; padding: 14px 48px 14px 16px; border-radius: 12px;
+  background: var(--card2); border: 1px solid var(--border);
+  color: var(--text); font-size: 18px; font-weight: 700; outline: none;
+}
+.amount-input:focus { border-color: var(--accent2); }
+.amount-input::placeholder { color: var(--muted); font-size: 14px; font-weight: 400; }
+.input-suffix { position: absolute; right: 14px; top: 50%; transform: translateY(-50%); color: var(--muted); font-size: 14px; }
+.amount-hint { font-size: 12px; color: var(--muted); margin-top: 6px; }
+.amount-hint em { color: var(--accent2); font-style: normal; }
+
+.submit-req-btn {
+  width: 100%; padding: 15px; border-radius: 14px; font-size: 15px; font-weight: 700;
+  background: linear-gradient(135deg, #e8d5b7, #d4b896); color: #0a1628; border: none; cursor: pointer;
+}
+.submit-req-btn:active { opacity: .85; }
+.submit-req-btn:disabled { opacity: .5; cursor: default; }
+.req-back-link { display: block; text-align: center; margin-top: 12px; font-size: 13px; color: var(--muted); cursor: pointer; text-decoration: underline; text-underline-offset: 3px; }
+
+/* Request sent */
+.req-sent-card { background: var(--card); border: 1px solid var(--border); border-radius: 20px; padding: 28px 20px; text-align: center; }
+.req-sent-icon { font-size: 52px; margin-bottom: 14px; }
+.req-sent-title { font-size: 18px; font-weight: 700; color: var(--accent); margin-bottom: 8px; }
+.req-sent-desc { font-size: 14px; color: var(--muted); line-height: 1.6; margin-bottom: 24px; }
+.req-sent-info { background: var(--card2); border: 1px solid var(--border); border-radius: 12px; padding: 14px; margin-bottom: 20px; text-align: left; }
+.req-sent-row { display: flex; justify-content: space-between; padding: 5px 0; font-size: 13px; }
+.req-sent-row span:first-child { color: var(--muted); }
+.req-sent-row span:last-child { font-weight: 600; }
+
 /* Toast */
 .toast { position: fixed; bottom: 30px; left: 50%; transform: translateX(-50%); background: rgba(15,29,53,.97); border: 1px solid var(--border); color: var(--text); padding: 10px 20px; border-radius: 12px; font-size: 14px; white-space: nowrap; z-index: 100; opacity: 0; transition: opacity .2s; pointer-events: none; }
 .toast.show { opacity: 1; }
@@ -147,12 +196,26 @@ h1 { font-size: 20px; font-weight: 700; color: var(--accent); }
       <div class="empty-desc">Сейчас нет доступных заявок на покупку.<br>Попробуйте чуть позже.</div>
       <button class="retry-btn" onclick="loadOffers()">Обновить</button>
     </div>
+    <div class="request-banner" style="margin-top:14px">
+      <div class="request-banner-text">
+        <b>Нужна конкретная сумма?</b>
+        Оставьте запрос — оператор подберёт условия
+      </div>
+      <button class="request-banner-btn" onclick="showRequestForm()">Запрос</button>
+    </div>
   </div>
 
   <!-- Offers -->
   <div class="screen" id="screenOffers">
     <div class="section-title">Доступные предложения</div>
     <div class="offers-list" id="offersList"></div>
+    <div class="request-banner">
+      <div class="request-banner-text">
+        <b>Нужна другая сумма?</b>
+        Оставьте запрос — оператор свяжется с вами
+      </div>
+      <button class="request-banner-btn" onclick="showRequestForm()">Запрос</button>
+    </div>
   </div>
 
   <!-- Deal -->
@@ -198,6 +261,35 @@ h1 { font-size: 20px; font-weight: 700; color: var(--accent); }
         <div class="step waiting"><span class="step-icon">💸</span><div class="step-text">Зачисление USDT<small>На ваш баланс Moon Wallet</small></div></div>
       </div>
       <button class="back-offers-btn" onclick="startOver()">← К предложениям</button>
+    </div>
+  </div>
+
+  <!-- Request form -->
+  <div class="screen" id="screenRequest">
+    <div class="req-form-card">
+      <div class="req-form-title">💬 Запрос на сумму</div>
+      <div class="req-form-desc">Не нашли подходящее предложение? Укажите нужную сумму — оператор подберёт условия и напишет вам в Telegram.</div>
+      <div class="input-group">
+        <div class="input-label">Сумма в рублях</div>
+        <div class="amount-input-wrap">
+          <input class="amount-input" type="number" id="reqAmount" placeholder="10 000" inputmode="numeric" min="100" max="5000000" oninput="onReqAmountInput()">
+          <span class="input-suffix">₽</span>
+        </div>
+        <div class="amount-hint" id="reqAmountHint">&nbsp;</div>
+      </div>
+      <button class="submit-req-btn" id="submitReqBtn" onclick="submitRequest()">Отправить запрос</button>
+      <span class="req-back-link" onclick="loadOffers()">← Назад к предложениям</span>
+    </div>
+  </div>
+
+  <!-- Request sent -->
+  <div class="screen" id="screenReqSent">
+    <div class="req-sent-card">
+      <div class="req-sent-icon">📨</div>
+      <div class="req-sent-title">Запрос отправлен!</div>
+      <div class="req-sent-desc">Ваш запрос получен. Оператор свяжется с вами в Telegram и предложит условия обмена.</div>
+      <div class="req-sent-info" id="reqSentInfo"></div>
+      <button class="back-offers-btn" onclick="loadOffers()">← К предложениям</button>
     </div>
   </div>
 </div>
@@ -392,6 +484,64 @@ async function cancelDeal() {
 function copyText(t) { navigator.clipboard?.writeText(t).catch(()=>{}); toast('Скопировано!'); }
 function copyAddr() { copyText(document.getElementById('addrText').textContent); }
 function startOver() { clearInterval(timerInt); clearInterval(keepAliveInt); deal = null; loadOffers(); }
+
+function showRequestForm() {
+  document.getElementById('reqAmount').value = '';
+  document.getElementById('reqAmountHint').innerHTML = '&nbsp;';
+  document.getElementById('submitReqBtn').disabled = false;
+  document.getElementById('submitReqBtn').textContent = 'Отправить запрос';
+  show('screenRequest');
+}
+
+function onReqAmountInput() {
+  const val = Number(document.getElementById('reqAmount').value);
+  const hint = document.getElementById('reqAmountHint');
+  if (!val) { hint.innerHTML = '&nbsp;'; return; }
+  if (val < 100) { hint.innerHTML = '<span style="color:var(--red)">Минимум 100 ₽</span>'; return; }
+  if (val > 5000000) { hint.innerHTML = '<span style="color:var(--red)">Максимум 5 000 000 ₽</span>'; return; }
+  if (rate > 0) {
+    const usdt = (val / rate).toFixed(2);
+    hint.innerHTML = '≈ <em>' + usdt + ' USDT</em> по текущему курсу';
+  } else {
+    hint.innerHTML = '&nbsp;';
+  }
+}
+
+async function submitRequest() {
+  const amountRub = Number(document.getElementById('reqAmount').value);
+  if (!amountRub || amountRub < 100) { toast('Введите сумму от 100 ₽'); return; }
+  if (amountRub > 5000000) { toast('Максимум 5 000 000 ₽'); return; }
+
+  const btn = document.getElementById('submitReqBtn');
+  btn.disabled = true;
+  btn.textContent = 'Отправляем…';
+
+  try {
+    const d = await api('/api/exchange/buy_request', {
+      method: 'POST',
+      body: JSON.stringify({ amountRub })
+    });
+    if (!d?.ok) {
+      toast(d?.error || 'Ошибка отправки запроса');
+      btn.disabled = false;
+      btn.textContent = 'Отправить запрос';
+      return;
+    }
+
+    // Show confirmation screen
+    const info = document.getElementById('reqSentInfo');
+    const approxUsdt = d.approxRate > 0 ? (amountRub / d.approxRate).toFixed(2) : '—';
+    info.innerHTML =
+      '<div class="req-sent-row"><span>Сумма</span><span>' + fmtRub(amountRub) + ' ₽</span></div>' +
+      '<div class="req-sent-row"><span>≈ USDT</span><span>' + approxUsdt + ' USDT</span></div>' +
+      (d.id ? '<div class="req-sent-row"><span>Номер заявки</span><span style="color:var(--muted);font-size:11px">#' + String(d.id).slice(-8) + '</span></div>' : '');
+    show('screenReqSent');
+  } catch(e) {
+    toast('Ошибка: ' + (e.message || 'попробуйте ещё раз'));
+    btn.disabled = false;
+    btn.textContent = 'Отправить запрос';
+  }
+}
 
 loadOffers();
 </script>

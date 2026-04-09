@@ -1207,6 +1207,13 @@ async function handleRequest(request, env, ctx) {
     if (mExchDeal && method === "GET")
       return await handleExchangeDeal(request, env, mExchDeal[1]);
 
+    if (path === "/api/exchange/buy_request" && method === "POST")
+      return await handleExchangeBuyRequest(request, env);
+    if (path === "/api/exchange/buy_requests" && method === "GET")
+      return await handleExchangeBuyRequests(request, env);
+    if (path === "/api/admin/exchange_requests" && method === "GET")
+      return await handleAdminExchangeRequests(request, env);
+
     return bad("Not found", 404);
   } catch (e) {
     return bad("Internal error: " + (e.message || String(e)), 500);
@@ -1722,6 +1729,86 @@ async function handleExchangeDeal(req, env, offerId) {
   const deal = await kvGet(env, `exch:${user.tgId}:${offerId}`);
   if (!deal) return bad("Deal not found", 404);
   return json({ ok: true, deal });
+}
+
+async function handleExchangeBuyRequest(req, env) {
+  const [user, err] = await requireUser(req, env);
+  if (err) return err;
+
+  const body = await req.json().catch(() => ({}));
+  const amountRub = Math.floor(Number(body.amountRub || body.amount || 0));
+  if (!amountRub || amountRub < 100) return bad("Минимальная сумма 100 ₽");
+  if (amountRub > 5_000_000) return bad("Слишком большая сумма");
+
+  const address = await ensureDepositAddress(env, user);
+
+  // Store request locally
+  const reqId = "mwr_" + uid();
+  const reqRec = {
+    id: reqId,
+    tgId: user.tgId,
+    name: user.firstName || user.name || user.username || "",
+    amountRub,
+    address,
+    status: "PENDING",
+    createdAt: now(),
+  };
+  await kvPut(env, `buyreq:${user.tgId}:${reqId}`, reqRec);
+
+  // Add to user request index
+  const idxKey = `buyreq_idx:${user.tgId}`;
+  const idx = (await kvGet(env, idxKey)) || [];
+  idx.unshift(reqId);
+  await kvPut(env, idxKey, idx.slice(0, 50));
+
+  // Proxy to crossflag (no auth needed on crossflag side)
+  let cfResult = null;
+  try {
+    cfResult = await cfPost("/api/public/mw_buy_request", {
+      amountRub,
+      moonWalletUser: { tgId: String(user.tgId), name: reqRec.name, address },
+      toAddress: address,
+    });
+    if (cfResult?.id) {
+      reqRec.crossflagId = cfResult.id;
+      reqRec.approxRate = cfResult.approxRate;
+      await kvPut(env, `buyreq:${user.tgId}:${reqId}`, reqRec);
+    }
+  } catch {}
+
+  return json({ ok: true, id: reqId, status: "PENDING", amountRub, approxRate: cfResult?.approxRate || 0 });
+}
+
+async function handleExchangeBuyRequests(req, env) {
+  const [user, err] = await requireUser(req, env);
+  if (err) return err;
+
+  const idxKey = `buyreq_idx:${user.tgId}`;
+  const idx = (await kvGet(env, idxKey)) || [];
+  const requests = [];
+  for (const id of idx.slice(0, 20)) {
+    const r = await kvGet(env, `buyreq:${user.tgId}:${id}`);
+    if (r) requests.push(r);
+  }
+  return json({ ok: true, requests });
+}
+
+async function handleAdminExchangeRequests(req, env) {
+  const adminToken = req.headers.get("X-Admin-Token") || req.headers.get("x-admin-token") || "";
+  const cfg = await getSettings(env);
+  if (!adminToken || adminToken !== cfg.adminToken) return bad("Unauthorized", 401);
+
+  // List all exchange buy requests via KV list
+  const keys = await env.KV.list({ prefix: "buyreq:", limit: 200 });
+  const reqs = [];
+  for (const k of keys.keys || []) {
+    if (k.name.split(":").length === 3) { // buyreq:{tgId}:{reqId}
+      const r = await kvGet(env, k.name);
+      if (r) reqs.push(r);
+    }
+  }
+  reqs.sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
+  return json({ ok: true, requests: reqs.slice(0, 200) });
 }
 
 export default {
