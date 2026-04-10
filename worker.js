@@ -800,6 +800,7 @@ async function handleAdminUsers(req, env) {
       firstName: u.firstName,
       balance: microToUsdt(u.balanceMicro || 0),
       banned: !!u.banned,
+      exchangeEnabled: u.exchangeEnabled !== false,
       createdAt: u.createdAt || 0,
       updatedAt: u.updatedAt || 0,
     });
@@ -819,9 +820,10 @@ async function handleAdminUserPatch(req, env, tgId) {
   const body = await req.json().catch(() => ({}));
   if (body.banned !== undefined) user.banned = !!body.banned;
   if (body.note !== undefined) user.note = String(body.note).slice(0, 1000);
+  if (body.exchangeEnabled !== undefined) user.exchangeEnabled = !!body.exchangeEnabled;
   user.updatedAt = now();
   await saveUser(env, user);
-  return json({ ok: true });
+  return json({ ok: true, exchangeEnabled: user.exchangeEnabled !== false });
 }
 
 // ── Admin: Withdrawals ───────────────────────────────────────
@@ -1213,6 +1215,8 @@ async function handleRequest(request, env, ctx) {
       return await handleExchangeBuyRequestCancel(request, env);
     if (path === "/api/exchange/buy_requests" && method === "GET")
       return await handleExchangeBuyRequests(request, env);
+    if (path === "/api/exchange/submit_proof" && method === "POST")
+      return await handleExchangeSubmitProof(request, env);
     if (path === "/api/admin/exchange_requests" && method === "GET")
       return await handleAdminExchangeRequests(request, env);
 
@@ -1616,6 +1620,7 @@ async function handleExchangeLocks(req, env) {
 async function handleExchangeReserve(req, env) {
   const [user, err] = await requireUser(req, env);
   if (err) return err;
+  if (user.exchangeEnabled === false) return bad("Обмен недоступен для вашего аккаунта. Обратитесь к администратору.", 403);
 
   const body = await req.json().catch(() => ({}));
   const offerId = String(body.id || "").trim();
@@ -1738,6 +1743,7 @@ const BUY_REQ_TTL_MS = 7 * 60 * 1000; // 7 minutes, matches crossflag
 async function handleExchangeBuyRequest(req, env) {
   const [user, err] = await requireUser(req, env);
   if (err) return err;
+  if (user.exchangeEnabled === false) return bad("Обмен недоступен для вашего аккаунта. Обратитесь к администратору.", 403);
 
   const body = await req.json().catch(() => ({}));
   const minRub = Math.floor(Number(body.minRub ?? body.amountRub ?? body.amount ?? 0));
@@ -1840,6 +1846,33 @@ async function handleAdminExchangeRequests(req, env) {
   }
   reqs.sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
   return json({ ok: true, requests: reqs.slice(0, 200) });
+}
+
+// Proxy multipart proof upload to crossflag
+async function handleExchangeSubmitProof(req, env) {
+  const [user, err] = await requireUser(req, env);
+  if (err) return err;
+
+  const ct = req.headers.get("Content-Type") || "";
+  if (!ct.includes("multipart/form-data")) return bad("Expected multipart/form-data");
+
+  let fd;
+  try { fd = await req.formData(); } catch { return bad("Invalid form data"); }
+
+  // Forward to crossflag (reserveId acts as auth on crossflag side)
+  const out = new FormData();
+  for (const [key, val] of fd.entries()) out.append(key, val);
+
+  try {
+    const res = await fetch(CROSSFLAG_BASE + "/api/public/submit_proof", {
+      method: "POST",
+      body: out,
+    });
+    const data = await res.json().catch(() => ({ ok: false, error: "Crossflag error" }));
+    return json(data);
+  } catch (e) {
+    return bad("Ошибка отправки: " + (e.message || String(e)), 502);
+  }
 }
 
 export default {

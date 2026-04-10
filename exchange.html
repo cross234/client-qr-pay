@@ -348,21 +348,15 @@ h1 { font-size: 20px; font-weight: 700; color: var(--accent); }
     </div>
   </div>
 
-  <!-- Pending -->
+  <!-- Pending (shown after proof submitted) -->
   <div class="screen" id="screenPending">
     <div class="pending-card">
       <div class="pending-icon">⏳</div>
       <div class="pending-title">Ожидаем подтверждения</div>
-      <div class="pending-desc">Вы отметили оплату. Оператор проверяет перевод и зачислит USDT на ваш баланс.</div>
-      <div class="addr-block" id="addrBlock" style="display:none">
-        <div class="addr-label">Ваш USDT TRC-20 адрес</div>
-        <div class="addr-value">
-          <span class="addr-text" id="addrText"></span>
-          <button class="copy-btn" onclick="copyAddr()">📋</button>
-        </div>
-      </div>
+      <div class="pending-desc">Документы отправлены. Оператор проверит перевод и зачислит USDT на ваш баланс Moon Wallet.</div>
       <div class="steps">
         <div class="step done"><span class="step-icon">✅</span><div class="step-text">Оплата отмечена<small>Перевод зафиксирован</small></div></div>
+        <div class="step done"><span class="step-icon">📄</span><div class="step-text">Документы отправлены<small>Чек и скрин переданы оператору</small></div></div>
         <div class="step active"><span class="step-icon">🔍</span><div class="step-text">Проверка платежа<small>Оператор верифицирует перевод</small></div></div>
         <div class="step waiting"><span class="step-icon">💸</span><div class="step-text">Зачисление USDT<small>На ваш баланс Moon Wallet</small></div></div>
       </div>
@@ -628,10 +622,16 @@ async function markPaid() {
   const btn = document.getElementById('paidBtn');
   btn.disabled = true; btn.textContent = 'Отправляем…';
   try {
-    await api('/api/exchange/mark_paid', { method: 'POST', body: JSON.stringify({ id: deal.offerId, reserveId: deal.reserveId }) });
+    const d = await api('/api/exchange/mark_paid', { method: 'POST', body: JSON.stringify({ id: deal.offerId, reserveId: deal.reserveId }) });
     clearInterval(timerInt); clearInterval(keepAliveInt);
-    if (deal.address) { document.getElementById('addrText').textContent = deal.address; document.getElementById('addrBlock').style.display = ''; }
-    show('screenPending');
+    // Redirect to proof upload page
+    const qs = new URLSearchParams({
+      offerId: deal.offerId,
+      reserveId: deal.reserveId,
+      amountRub: String(deal.amountRub || ''),
+      usdt: String(deal.usdt || ''),
+    });
+    window.location.href = 'exchange-proof.html?' + qs.toString();
   } catch(e) {
     btn.disabled = false; btn.textContent = '✅ Я перевёл деньги';
     toast('Ошибка: ' + (e.message || 'попробуйте ещё раз'));
@@ -647,7 +647,6 @@ async function cancelDeal() {
 }
 
 function copyText(t) { navigator.clipboard?.writeText(t).catch(()=>{}); toast('Скопировано!'); }
-function copyAddr() { copyText(document.getElementById('addrText').textContent); }
 function startOver() { clearInterval(timerInt); clearInterval(keepAliveInt); deal = null; loadOffers(); }
 
 // ══ Request form ═════════════════════════════════════════
@@ -659,12 +658,29 @@ async function showRequestScreen() {
   await loadActiveRequests();
 }
 
+function findMatchInOffers(offers, minRub, maxRub) {
+  let best = null, bestScore = Infinity;
+  const mid = (Number(minRub) + Number(maxRub)) / 2;
+  for (const o of offers) {
+    const a = Number(o.amountRub);
+    if (!isFinite(a) || a < minRub || a > maxRub) continue;
+    const score = Math.abs(a - mid);
+    if (score < bestScore) { bestScore = score; best = o; }
+  }
+  return best;
+}
+
 async function loadActiveRequests() {
   try {
-    const d = await api('/api/exchange/buy_requests');
-    const items = Array.isArray(d?.items) ? d.items : [];
+    // Fetch requests and offers in parallel to detect matches
+    const [reqData, offerData] = await Promise.all([
+      api('/api/exchange/buy_requests'),
+      api('/api/exchange/offers'),
+    ]);
+    const items = Array.isArray(reqData?.items) ? reqData.items : [];
     const active = items.filter(r => r.status === 'PENDING');
     active.sort((a,b) => Number(b.createdAt||0) - Number(a.createdAt||0));
+    const offers = Array.isArray(offerData?.offers) ? offerData.offers : [];
 
     const wrap = document.getElementById('activeReqsWrap');
     const list = document.getElementById('activeReqsList');
@@ -679,6 +695,8 @@ async function loadActiveRequests() {
       const m = Math.floor(msLeft / 60000), s = Math.floor((msLeft % 60000) / 1000);
       const timeStr = msLeft <= 0 ? 'Время вышло' : m + ':' + String(s).padStart(2,'0');
       const danger = msLeft < 2 * 60 * 1000;
+
+      const matchedOffer = findMatchInOffers(offers, Number(req.minRub), Number(req.maxRub));
 
       const el = document.createElement('div');
       el.className = 'req-item';
@@ -696,11 +714,21 @@ async function loadActiveRequests() {
           '<span class="timer-bar-text">' + timeStr + '</span>' +
           '<div class="timer-bar-track"><div class="timer-bar-fill" style="width:' + pct + '%"></div></div>' +
         '</div>' +
+        (matchedOffer
+          ? '<div class="found-anim" style="margin-bottom:8px"><svg width="16" height="16" viewBox="0 0 24 24" fill="none"><path d="M9 12l2 2 4-4" stroke="rgba(74,222,128,.95)" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/><circle cx="12" cy="12" r="10" stroke="rgba(74,222,128,.95)" stroke-width="2"/></svg><span class="found-text">Найдено ' + fmtRub(matchedOffer.amountRub) + ' ₽!</span></div>'
+          : '<div class="search-anim" style="margin-bottom:8px"><div class="search-dots"><span></span><span></span><span></span></div><span class="search-text">Ищется…</span></div>') +
         '<div class="req-actions">' +
           '<button class="req-btn req-btn-stop" data-cancel="' + req.id + '">Остановить</button>' +
-          '<button class="req-btn req-btn-go" data-watch="' + req.id + '" data-min="' + req.minRub + '" data-max="' + req.maxRub + '">Следить</button>' +
+          (matchedOffer
+            ? '<button class="req-btn req-btn-go" data-deal-offer="' + matchedOffer.id + '">Перейти к сделке</button>'
+            : '<div style="display:flex;align-items:center;justify-content:center;opacity:.45;font-size:12px;font-weight:600">Ищем предложение…</div>') +
         '</div>';
       list.appendChild(el);
+
+      // Bind deal button
+      if (matchedOffer) {
+        el.querySelector('[data-deal-offer]')?.addEventListener('click', () => reserveOffer(matchedOffer));
+      }
     }
 
     list.querySelectorAll('[data-cancel]').forEach(btn => {
@@ -713,17 +741,6 @@ async function loadActiveRequests() {
         } catch {
           btn.disabled = false; btn.textContent = 'Остановить';
         }
-      });
-    });
-
-    list.querySelectorAll('[data-watch]').forEach(btn => {
-      btn.addEventListener('click', () => {
-        const id = btn.getAttribute('data-watch');
-        const minRub = Number(btn.getAttribute('data-min'));
-        const maxRub = Number(btn.getAttribute('data-max'));
-        const rec = active.find(r => r.id === id);
-        currentReq = { id, minRub, maxRub, count: rec?.count || 1, createdAt: rec?.createdAt || Date.now() };
-        startWaiting();
       });
     });
   } catch {}

@@ -1,0 +1,327 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>Подтверждение оплаты — Moon Wallet</title>
+<style>
+:root {
+  --bg: #0a1628; --card: #0f1d35; --card2: #132444; --border: #1c2f52;
+  --text: #faf5ef; --muted: #8a9bb8; --accent: #e8d5b7; --accent2: #d4b896;
+  --green: #4ade80; --red: #f87171; --yellow: #fbbf24;
+}
+* { margin: 0; padding: 0; box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+body {
+  font-family: system-ui, -apple-system, sans-serif;
+  background: var(--bg); color: var(--text); min-height: 100vh;
+  background-image:
+    radial-gradient(ellipse at 20% 0%, rgba(30,60,114,.4) 0%, transparent 60%),
+    radial-gradient(ellipse at 80% 100%, rgba(15,40,80,.3) 0%, transparent 60%);
+}
+.container { width: 100%; max-width: 480px; margin: 0 auto; padding: 12px 16px 40px; }
+
+.header { display: flex; align-items: center; gap: 12px; margin-bottom: 20px; }
+.back-btn {
+  width: 40px; height: 40px; border-radius: 12px; flex-shrink: 0;
+  background: var(--card); border: 1px solid var(--border);
+  color: var(--accent); font-size: 18px;
+  display: flex; align-items: center; justify-content: center;
+  cursor: pointer; text-decoration: none;
+}
+h1 { font-size: 18px; font-weight: 700; color: var(--accent); }
+.sub-title { font-size: 12px; color: var(--muted); margin-top: 2px; }
+
+/* Deal summary */
+.deal-summary {
+  background: var(--card); border: 1px solid var(--border); border-radius: 16px;
+  padding: 14px 16px; margin-bottom: 16px;
+  display: flex; justify-content: space-between; align-items: center;
+}
+.deal-sum-label { font-size: 12px; color: var(--muted); }
+.deal-sum-val { font-size: 20px; font-weight: 800; }
+.deal-sum-usdt { font-size: 13px; color: var(--muted); margin-top: 2px; text-align: right; }
+.deal-sum-usdt em { color: var(--accent2); font-style: normal; }
+
+/* Upload card */
+.upload-card { background: var(--card); border: 1px solid var(--border); border-radius: 20px; padding: 18px; margin-bottom: 14px; }
+.upload-card-title { font-size: 14px; font-weight: 700; color: var(--accent); margin-bottom: 4px; }
+.upload-card-hint { font-size: 12px; color: var(--muted); margin-bottom: 14px; line-height: 1.4; }
+
+.dropzone {
+  border: 2px dashed rgba(232,213,183,.25); border-radius: 14px;
+  padding: 22px 16px; text-align: center; cursor: pointer;
+  position: relative; transition: border-color .2s, background .2s;
+}
+.dropzone:hover, .dropzone.dragover { border-color: rgba(232,213,183,.5); background: rgba(232,213,183,.04); }
+.dropzone.has-file { border-color: rgba(74,222,128,.4); background: rgba(74,222,128,.05); }
+.dropzone input[type=file] { position: absolute; inset: 0; opacity: 0; cursor: pointer; width: 100%; height: 100%; }
+.dropzone-icon { font-size: 32px; margin-bottom: 8px; }
+.dropzone-text { font-size: 13px; color: var(--muted); }
+.dropzone-text b { color: var(--accent); }
+.dropzone-name {
+  margin-top: 10px; padding: 7px 12px; border-radius: 10px;
+  background: rgba(74,222,128,.08); border: 1px solid rgba(74,222,128,.25);
+  font-size: 12px; font-weight: 600; color: var(--green);
+  display: none; word-break: break-all;
+}
+.dropzone.has-file .dropzone-name { display: block; }
+
+/* Preview image */
+.img-preview { max-width: 100%; max-height: 200px; border-radius: 10px; margin-top: 10px; display: none; object-fit: contain; }
+.dropzone.has-file .img-preview { display: block; }
+
+/* Instruction block */
+.instruction-box {
+  background: rgba(251,191,36,.06); border: 1px solid rgba(251,191,36,.2);
+  border-radius: 12px; padding: 12px 14px; margin-bottom: 16px; font-size: 12px; color: #fde68a; line-height: 1.5;
+}
+
+/* Submit button */
+.submit-btn {
+  width: 100%; padding: 16px; border-radius: 14px; font-size: 16px; font-weight: 700;
+  background: linear-gradient(135deg, #e8d5b7, #d4b896); color: #0a1628; border: none; cursor: pointer;
+}
+.submit-btn:active { opacity: .85; }
+.submit-btn:disabled { opacity: .5; cursor: default; }
+
+/* Status message */
+.status-msg {
+  margin-top: 12px; padding: 12px 14px; border-radius: 12px; font-size: 13px; font-weight: 600;
+  display: none; text-align: center;
+}
+.status-msg.ok { background: rgba(74,222,128,.1); border: 1px solid rgba(74,222,128,.3); color: var(--green); display: block; }
+.status-msg.bad { background: rgba(248,113,113,.1); border: 1px solid rgba(248,113,113,.3); color: var(--red); display: block; }
+
+/* Success screen */
+.success-card { background: var(--card); border: 1px solid var(--border); border-radius: 20px; padding: 28px 20px; text-align: center; display: none; }
+.success-icon { font-size: 56px; margin-bottom: 16px; }
+.success-title { font-size: 20px; font-weight: 700; color: var(--accent); margin-bottom: 8px; }
+.success-desc { font-size: 14px; color: var(--muted); line-height: 1.6; margin-bottom: 24px; }
+.success-steps { display: flex; flex-direction: column; gap: 8px; margin-bottom: 24px; }
+.s-step { display: flex; align-items: center; gap: 10px; padding: 10px 12px; border-radius: 10px; background: var(--card2); border: 1px solid var(--border); font-size: 13px; }
+.s-step-icon { font-size: 18px; flex-shrink: 0; }
+.s-step.done { border-color: rgba(74,222,128,.3); background: rgba(74,222,128,.06); color: var(--green); }
+.s-step.active { border-color: rgba(232,213,183,.25); }
+.s-step.wait { opacity: .45; }
+.back-btn-wide { width: 100%; padding: 14px; border-radius: 14px; font-size: 15px; font-weight: 600; background: var(--card2); border: 1px solid var(--border); color: var(--accent); cursor: pointer; }
+
+/* Spinner */
+.spinner { width: 20px; height: 20px; border-radius: 50%; border: 2px solid rgba(10,22,40,.3); border-top-color: #0a1628; animation: spin .7s linear infinite; display: inline-block; vertical-align: middle; margin-right: 6px; }
+@keyframes spin { to { transform: rotate(360deg); } }
+
+/* Toast */
+.toast { position: fixed; bottom: 30px; left: 50%; transform: translateX(-50%); background: rgba(15,29,53,.97); border: 1px solid var(--border); color: var(--text); padding: 10px 20px; border-radius: 12px; font-size: 14px; white-space: nowrap; z-index: 100; opacity: 0; transition: opacity .2s; pointer-events: none; }
+.toast.show { opacity: 1; }
+</style>
+</head>
+<body>
+<div class="container">
+  <!-- Upload form (shown by default) -->
+  <div id="formSection">
+    <div class="header">
+      <a href="exchange.html" class="back-btn">←</a>
+      <div>
+        <h1>Подтверждение оплаты</h1>
+        <div class="sub-title">Прикрепите документы для проверки</div>
+      </div>
+    </div>
+
+    <div class="deal-summary">
+      <div>
+        <div class="deal-sum-label">Вы оплатили</div>
+        <div class="deal-sum-val" id="sumRub">—</div>
+      </div>
+      <div style="text-align:right">
+        <div class="deal-sum-label">Получите</div>
+        <div class="deal-sum-usdt"><em id="sumUsdt">—</em> USDT</div>
+        <div class="deal-sum-label" style="margin-top:2px">на баланс кошелька</div>
+      </div>
+    </div>
+
+    <div class="instruction-box">
+      📋 Прикрепите <b>PDF-чек</b> из банковского приложения и <b>скриншот экрана банка</b> с видимым переводом. Это ускорит проверку оператором.
+    </div>
+
+    <!-- PDF upload -->
+    <div class="upload-card">
+      <div class="upload-card-title">📄 PDF чек</div>
+      <div class="upload-card-hint">Скачайте PDF-чек из приложения банка и прикрепите его сюда.</div>
+      <div class="dropzone" id="pdfZone">
+        <input type="file" id="pdfInput" accept="application/pdf" onchange="onPdfChange(this)">
+        <div class="dropzone-icon">📎</div>
+        <div class="dropzone-text">Нажмите или перетащите файл<br><b>PDF до 10 МБ</b></div>
+        <div class="dropzone-name" id="pdfName"></div>
+      </div>
+    </div>
+
+    <!-- Screenshot upload -->
+    <div class="upload-card">
+      <div class="upload-card-title">📷 Скриншот банка</div>
+      <div class="upload-card-hint">Сфотографируйте или загрузите скрин экрана банка с видимым переводом.</div>
+      <div class="dropzone" id="shotZone">
+        <input type="file" id="shotInput" accept="image/*" onchange="onShotChange(this)">
+        <div class="dropzone-icon">🖼️</div>
+        <div class="dropzone-text">Нажмите или перетащите фото<br><b>JPG / PNG до 10 МБ</b></div>
+        <div class="dropzone-name" id="shotName"></div>
+        <img class="img-preview" id="shotPreview" alt="">
+      </div>
+    </div>
+
+    <button class="submit-btn" id="submitBtn" onclick="submitProof()">Отправить на проверку</button>
+    <div class="status-msg" id="statusMsg"></div>
+  </div>
+
+  <!-- Success screen (shown after submit) -->
+  <div class="success-card" id="successSection">
+    <div class="success-icon">📨</div>
+    <div class="success-title">Документы отправлены!</div>
+    <div class="success-desc">Оператор проверит ваш платёж и зачислит USDT на баланс Moon Wallet. Ждите уведомления в Telegram.</div>
+    <div class="success-steps">
+      <div class="s-step done"><span class="s-step-icon">✅</span>Оплата отмечена</div>
+      <div class="s-step done"><span class="s-step-icon">📄</span>Документы получены</div>
+      <div class="s-step active"><span class="s-step-icon">🔍</span>Проверка платежа оператором</div>
+      <div class="s-step wait"><span class="s-step-icon">💸</span>Зачисление USDT на баланс</div>
+    </div>
+    <button class="back-btn-wide" onclick="location.href='exchange.html'">← К предложениям</button>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+const p = new URLSearchParams(location.search);
+const offerId   = p.get('offerId')   || '';
+const reserveId = p.get('reserveId') || '';
+const amountRub = p.get('amountRub') || '';
+const usdt      = p.get('usdt')      || '';
+
+const API = (localStorage.getItem('worker_base') || 'https://client-qr-pay.kireeshka73.workers.dev').replace(/\/+$/, '');
+
+function getToken() {
+  try {
+    return localStorage.getItem('auth_token') ||
+           localStorage.getItem('mw_token') ||
+           sessionStorage.getItem('auth_token') || '';
+  } catch { return ''; }
+}
+
+function fmtRub(n) { return Number(n || 0).toLocaleString('ru-RU'); }
+function toast(msg, ms = 2800) {
+  const el = document.getElementById('toast');
+  el.textContent = msg; el.classList.add('show');
+  setTimeout(() => el.classList.remove('show'), ms);
+}
+
+// Populate deal info
+document.getElementById('sumRub').textContent = amountRub ? fmtRub(amountRub) + ' ₽' : '—';
+document.getElementById('sumUsdt').textContent = usdt || '—';
+
+// PDF
+function onPdfChange(inp) {
+  const file = inp.files[0];
+  const zone = document.getElementById('pdfZone');
+  const name = document.getElementById('pdfName');
+  if (file) {
+    zone.classList.add('has-file');
+    name.textContent = '✓ ' + file.name;
+  } else {
+    zone.classList.remove('has-file');
+    name.textContent = '';
+  }
+}
+
+// Screenshot
+function onShotChange(inp) {
+  const file = inp.files[0];
+  const zone = document.getElementById('shotZone');
+  const name = document.getElementById('shotName');
+  const preview = document.getElementById('shotPreview');
+  if (file) {
+    zone.classList.add('has-file');
+    name.textContent = '✓ ' + file.name;
+    const reader = new FileReader();
+    reader.onload = e => { preview.src = e.target.result; };
+    reader.readAsDataURL(file);
+  } else {
+    zone.classList.remove('has-file');
+    name.textContent = '';
+    preview.src = '';
+  }
+}
+
+// Drag & drop
+['pdfZone', 'shotZone'].forEach(id => {
+  const zone = document.getElementById(id);
+  zone.addEventListener('dragover', e => { e.preventDefault(); zone.classList.add('dragover'); });
+  zone.addEventListener('dragleave', () => zone.classList.remove('dragover'));
+  zone.addEventListener('drop', e => {
+    e.preventDefault(); zone.classList.remove('dragover');
+    const inp = zone.querySelector('input[type=file]');
+    if (e.dataTransfer.files.length) {
+      // Assign dropped file
+      const dt = new DataTransfer();
+      dt.items.add(e.dataTransfer.files[0]);
+      inp.files = dt.files;
+      inp.dispatchEvent(new Event('change'));
+    }
+  });
+});
+
+function setStatus(msg, kind) {
+  const el = document.getElementById('statusMsg');
+  el.textContent = msg;
+  el.className = 'status-msg ' + (kind || '');
+}
+
+async function submitProof() {
+  const pdfFile  = document.getElementById('pdfInput').files[0];
+  const shotFile = document.getElementById('shotInput').files[0];
+
+  if (!pdfFile)  { toast('Прикрепите PDF чек'); return; }
+  if (!shotFile) { toast('Прикрепите скриншот банка'); return; }
+  if (!offerId || !reserveId) { toast('Ошибка: нет ID сделки. Вернитесь назад.'); return; }
+
+  // Size check (10 MB each)
+  if (pdfFile.size > 10 * 1024 * 1024)  { toast('PDF слишком большой (макс 10 МБ)'); return; }
+  if (shotFile.size > 10 * 1024 * 1024) { toast('Фото слишком большое (макс 10 МБ)'); return; }
+
+  const btn = document.getElementById('submitBtn');
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spinner"></span>Отправляем…';
+  setStatus('', '');
+
+  const fd = new FormData();
+  fd.append('id', offerId);
+  fd.append('reserveId', reserveId);
+  fd.append('bankFrom', '—');
+  fd.append('proofType', 'CHECK_ONLY_PDF_SCREENSHOT');
+  fd.append('pdf1', pdfFile, pdfFile.name);
+  fd.append('photo', shotFile, shotFile.name);
+
+  const token = getToken();
+  try {
+    const res = await fetch(API + '/api/exchange/submit_proof', {
+      method: 'POST',
+      headers: token ? { 'Authorization': 'Bearer ' + token } : {},
+      body: fd,
+    });
+    const data = await res.json().catch(() => ({ ok: false, error: 'Ошибка сервера' }));
+
+    if (data.ok || res.status === 200) {
+      // Show success screen
+      document.getElementById('formSection').style.display = 'none';
+      document.getElementById('successSection').style.display = 'block';
+    } else {
+      setStatus('Ошибка: ' + (data.error || 'попробуйте ещё раз'), 'bad');
+      btn.disabled = false;
+      btn.textContent = 'Отправить на проверку';
+    }
+  } catch(e) {
+    setStatus('Ошибка сети: ' + (e.message || 'попробуйте ещё раз'), 'bad');
+    btn.disabled = false;
+    btn.textContent = 'Отправить на проверку';
+  }
+}
+</script>
+</body>
+</html>

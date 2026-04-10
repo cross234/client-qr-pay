@@ -112,6 +112,8 @@ body {
 .btn:active { transform: scale(.97); }
 .btn-ban { background: var(--bad); color: #1a1a1a; }
 .btn-unban { background: var(--ok); color: #1a1a1a; }
+.btn-exchange-off { background: var(--warn); color: #1a1a1a; }
+.btn-exchange-on  { background: var(--card2); color: var(--accent); border: 1px solid var(--border); }
 .loading {
   text-align: center;
   padding: 60px 20px;
@@ -187,7 +189,9 @@ function renderUsers(users) {
     list.innerHTML = '<div class="empty">Пользователи не найдены</div>';
     return;
   }
-  list.innerHTML = users.map(u => `
+  list.innerHTML = users.map(u => {
+    const exchEnabled = u.exchangeEnabled !== false;
+    return `
     <div class="user-card">
       <div class="user-top">
         <div class="user-name">@${u.username || '—'}</div>
@@ -197,15 +201,20 @@ function renderUsers(users) {
         <div class="info-item">Telegram ID<span>${u.tgId}</span></div>
         <div class="info-item">Баланс<span>${parseFloat(u.balance || 0).toFixed(2)} USDT</span></div>
         <div class="info-item">Регистрация<span>${formatDate(u.created || u.createdAt)}</span></div>
+        <div class="info-item">Обмен<span style="color:${exchEnabled ? 'var(--ok)' : 'var(--bad)'}">${exchEnabled ? '✅ Разрешён' : '🚫 Закрыт'}</span></div>
       </div>
-      <div class="user-actions">
+      <div class="user-actions" style="flex-wrap:wrap">
         ${u.banned
           ? `<button class="btn btn-unban" onclick="toggleBan('${u.tgId}', false)">Разбанить</button>`
           : `<button class="btn btn-ban" onclick="toggleBan('${u.tgId}', true)">Забанить</button>`
         }
+        ${exchEnabled
+          ? `<button class="btn btn-exchange-off" onclick="toggleExchange('${u.tgId}', false)">🚫 Закрыть обмен</button>`
+          : `<button class="btn btn-exchange-on"  onclick="toggleExchange('${u.tgId}', true)">✅ Открыть обмен</button>`
+        }
       </div>
     </div>
-  `).join('');
+  `}).join('');
 }
 
 async function loadUsers() {
@@ -224,18 +233,27 @@ async function loadUsers() {
 async function toggleBan(tgId, banned) {
   try {
     const res = await fetch(BASE + '/api/admin/users/' + tgId, {
-      method: 'PATCH',
-      headers: headers(),
-      body: JSON.stringify({ banned })
+      method: 'PATCH', headers: headers(), body: JSON.stringify({ banned })
     });
     if (!res.ok) throw new Error('Ошибка ' + res.status);
     showToast(banned ? 'Пользователь заблокирован' : 'Пользователь разблокирован');
     const idx = allUsers.findIndex(u => String(u.tgId) === String(tgId));
     if (idx !== -1) allUsers[idx].banned = banned;
     filterAndRender();
-  } catch (e) {
-    showToast('Ошибка: ' + e.message);
-  }
+  } catch (e) { showToast('Ошибка: ' + e.message); }
+}
+
+async function toggleExchange(tgId, exchangeEnabled) {
+  try {
+    const res = await fetch(BASE + '/api/admin/users/' + tgId, {
+      method: 'PATCH', headers: headers(), body: JSON.stringify({ exchangeEnabled })
+    });
+    if (!res.ok) throw new Error('Ошибка ' + res.status);
+    showToast(exchangeEnabled ? '✅ Обмен открыт' : '🚫 Обмен закрыт');
+    const idx = allUsers.findIndex(u => String(u.tgId) === String(tgId));
+    if (idx !== -1) allUsers[idx].exchangeEnabled = exchangeEnabled;
+    filterAndRender();
+  } catch (e) { showToast('Ошибка: ' + e.message); }
 }
 
 function filterAndRender() {
