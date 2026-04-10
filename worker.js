@@ -1217,6 +1217,9 @@ async function handleRequest(request, env, ctx) {
       return await handleExchangeBuyRequests(request, env);
     if (path === "/api/exchange/submit_proof" && method === "POST")
       return await handleExchangeSubmitProof(request, env);
+    // Webhook called by crossflag when a matching offer is found for a MW request
+    if (path === "/api/internal/mw_match_notify" && method === "POST")
+      return await handleMwMatchNotify(request, env);
     if (path === "/api/admin/exchange_requests" && method === "GET")
       return await handleAdminExchangeRequests(request, env);
 
@@ -1777,6 +1780,7 @@ async function handleExchangeBuyRequest(req, env) {
   try {
     cfResult = await cfPost("/api/public/mw_buy_request", {
       minRub, maxRub, count,
+      mwReqId: reqId,
       moonWalletUser: { tgId: String(user.tgId), name: reqRec.name, address },
       toAddress: address,
     });
@@ -1875,9 +1879,117 @@ async function handleExchangeSubmitProof(req, env) {
   }
 }
 
+// Webhook from crossflag: a MW buy request got a matching offer
+async function handleMwMatchNotify(request, env) {
+  // Validate with a shared secret (BOT_TOKEN prefix used as cheap secret)
+  const secret = request.headers.get("X-MW-Secret") || "";
+  const expectedSecret = (env.BOT_TOKEN || "").slice(0, 20);
+  if (!expectedSecret || secret !== expectedSecret) return bad("Unauthorized", 401);
+
+  const body = await request.json().catch(() => ({}));
+  const tgId = String(body.tgId || "").trim();
+  const offer = body.offer || {};
+  const reqId = String(body.reqId || "").trim();
+  if (!tgId || !offer.id) return bad("Missing tgId or offer");
+
+  // Notify via Telegram
+  const r = Number(offer.rate || 0);
+  const usdt = r > 0 ? (Number(offer.amountRub) / r).toFixed(2) : "—";
+  const msg =
+    `🎯 <b>Найдена заявка на покупку USDT!</b>\n\n` +
+    `💰 Сумма: <b>${fmtRubTg(offer.amountRub)} ₽</b>\n` +
+    `📊 Курс: <b>${r > 0 ? r.toFixed(2) + " ₽/USDT" : "—"}</b>\n` +
+    `💵 Получите: <b>≈ ${usdt} USDT</b>\n\n` +
+    `Откройте Moon Wallet → Обменять и нажмите <b>«Перейти к сделке»</b> ⚡`;
+  try { await tgSend(env, tgId, msg); } catch {}
+
+  // Mark notified in KV if reqId provided
+  if (reqId) {
+    const rec = await kvGet(env, `buyreq:${tgId}:${reqId}`);
+    if (rec && rec.status === "PENDING" && !rec.notifiedMatchOfferId) {
+      rec.notifiedMatchOfferId = offer.id;
+      rec.notifiedMatchAt = now();
+      await kvPut(env, `buyreq:${tgId}:${reqId}`, rec);
+    }
+  }
+
+  return json({ ok: true });
+}
+
+// ── Buy request match monitor (runs every 2 min via cron) ────
+// Checks all PENDING MW buy requests against live crossflag offers.
+// When a matching offer is found, notifies the user via MW Telegram bot.
+async function scanBuyRequestMatches(env) {
+  try {
+    // Fetch live crossflag offers once
+    let offers = [];
+    try {
+      const r = await fetch(CROSSFLAG_BASE + "/api/public/buy_offers");
+      const j = await r.json().catch(() => null);
+      if (j?.ok && Array.isArray(j.offers)) offers = j.offers;
+    } catch { return; }
+    if (!offers.length) return;
+
+    // Iterate all buyreq index keys
+    const idxKeys = await kvList(env, "buyreq_idx:");
+    for (const idxKey of idxKeys) {
+      const tgId = idxKey.replace("buyreq_idx:", "");
+      const idx = (await kvGet(env, idxKey)) || [];
+      for (const reqId of idx.slice(0, 20)) {
+        const rec = await kvGet(env, `buyreq:${tgId}:${reqId}`);
+        if (!rec || rec.status !== "PENDING") continue;
+
+        // Skip expired (> 7 min)
+        if (now() - Number(rec.createdAt || 0) > BUY_REQ_TTL_MS) {
+          rec.status = "EXPIRED";
+          await kvPut(env, `buyreq:${tgId}:${reqId}`, rec);
+          continue;
+        }
+
+        // Already notified about a match?
+        if (rec.notifiedMatchOfferId) continue;
+
+        const min = Number(rec.minRub), max = Number(rec.maxRub);
+        let best = null, bestScore = Infinity;
+        const mid = (min + max) / 2;
+        for (const o of offers) {
+          const a = Number(o.amountRub);
+          if (!isFinite(a) || a < min || a > max) continue;
+          const score = Math.abs(a - mid);
+          if (score < bestScore) { bestScore = score; best = o; }
+        }
+        if (!best) continue;
+
+        // Found a match — notify user via Telegram
+        const r = Number(best.rate || 0);
+        const usdt = r > 0 ? (Number(best.amountRub) / r).toFixed(2) : "—";
+        const msg =
+          `🎯 <b>Найдена заявка на покупку USDT!</b>\n\n` +
+          `Ваш запрос на сумму <b>${fmtRubTg(min)}–${fmtRubTg(max)} ₽</b> совпал с предложением в стакане:\n\n` +
+          `💰 Сумма: <b>${fmtRubTg(best.amountRub)} ₽</b>\n` +
+          `📊 Курс: <b>${r > 0 ? r.toFixed(2) + " ₽/USDT" : "—"}</b>\n` +
+          `💵 Получите: <b>≈ ${usdt} USDT</b>\n\n` +
+          `Откройте Moon Wallet → Обменять и нажмите <b>«Перейти к сделке»</b> ⚡`;
+
+        try { await tgSend(env, tgId, msg); } catch {}
+
+        // Mark notified so we don't spam
+        rec.notifiedMatchOfferId = best.id;
+        rec.notifiedMatchAt = now();
+        await kvPut(env, `buyreq:${tgId}:${reqId}`, rec);
+      }
+    }
+  } catch {}
+}
+
+function fmtRubTg(n) {
+  try { return Number(n || 0).toLocaleString("ru-RU"); } catch { return String(n); }
+}
+
 export default {
   fetch: handleRequest,
   async scheduled(event, env, ctx) {
     ctx.waitUntil(scanRapiraDeposits(env));
+    ctx.waitUntil(scanBuyRequestMatches(env));
   },
 };
