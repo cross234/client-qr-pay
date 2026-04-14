@@ -1741,7 +1741,7 @@ async function handleExchangeDeal(req, env, offerId) {
   return json({ ok: true, deal });
 }
 
-const BUY_REQ_TTL_MS = 7 * 60 * 1000; // 7 minutes, matches crossflag
+const BUY_REQ_TTL_MS = 10 * 60 * 1000; // 10 minutes
 
 async function handleExchangeBuyRequest(req, env) {
   const [user, err] = await requireUser(req, env);
@@ -1939,8 +1939,21 @@ async function scanBuyRequestMatches(env) {
         const rec = await kvGet(env, `buyreq:${tgId}:${reqId}`);
         if (!rec || rec.status !== "PENDING") continue;
 
-        // Skip expired (> 7 min)
+        // Skip expired (> 10 min) — notify user once and mark as EXPIRED
         if (now() - Number(rec.createdAt || 0) > BUY_REQ_TTL_MS) {
+          if (!rec.expiredNotified) {
+            const minR = fmtRubTg(rec.minRub), maxR = fmtRubTg(rec.maxRub);
+            const sameAmt = rec.minRub === rec.maxRub;
+            const amtStr = sameAmt ? `${minR} ₽` : `${minR}–${maxR} ₽`;
+            try {
+              await tgSend(env, tgId,
+                `⏱ <b>Заявка на обмен истекла</b>\n\n` +
+                `Ваша заявка на покупку USDT на сумму <b>${amtStr}</b> была автоматически отменена — время ожидания (10 минут) вышло.\n\n` +
+                `Откройте Moon Wallet → <b>Обменять</b>, чтобы создать новую заявку.`
+              );
+            } catch {}
+            rec.expiredNotified = true;
+          }
           rec.status = "EXPIRED";
           await kvPut(env, `buyreq:${tgId}:${reqId}`, rec);
           continue;
