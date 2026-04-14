@@ -43,11 +43,38 @@ h1 { font-size: 20px; font-weight: 700; color: var(--accent); }
 .loading-text { color: var(--muted); font-size: 14px; }
 
 /* Empty */
-.empty-wrap { text-align: center; padding: 60px 20px; background: var(--card); border: 1px solid var(--border); border-radius: 20px; }
+.empty-wrap { background: var(--card); border: 1px solid var(--border); border-radius: 20px; overflow: hidden; }
+.empty-top { text-align: center; padding: 36px 20px 24px; }
 .empty-icon { font-size: 48px; margin-bottom: 12px; }
 .empty-title { font-size: 16px; font-weight: 600; margin-bottom: 6px; }
 .empty-desc { font-size: 13px; color: var(--muted); line-height: 1.5; }
-.retry-btn { margin-top: 16px; padding: 10px 24px; border-radius: 12px; background: var(--card2); border: 1px solid var(--border); color: var(--accent); font-size: 14px; cursor: pointer; }
+.empty-rate-block {
+  margin: 0 16px 20px;
+  padding: 16px;
+  border-radius: 14px;
+  background: linear-gradient(135deg, rgba(232,213,183,.08), rgba(212,184,150,.05));
+  border: 1px solid rgba(232,213,183,.18);
+  text-align: center;
+}
+.empty-rate-label { font-size: 11px; font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: .07em; margin-bottom: 6px; }
+.empty-rate-value { font-size: 28px; font-weight: 800; color: var(--accent); letter-spacing: -.5px; }
+.empty-rate-sub { font-size: 12px; color: var(--muted); margin-top: 4px; }
+.empty-rate-sub span { color: var(--green); font-weight: 600; }
+.empty-request-block { padding: 0 16px 20px; }
+.empty-request-btn {
+  width: 100%; padding: 16px;
+  border-radius: 14px; border: none;
+  background: linear-gradient(135deg, #e8d5b7, #d4b896);
+  color: #0a1628; font-size: 15px; font-weight: 700;
+  cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 8px;
+  box-shadow: 0 6px 20px rgba(232,213,183,.2);
+  font-family: inherit;
+}
+.empty-request-btn:active { opacity: .85; }
+.empty-request-hint { font-size: 12px; color: var(--muted); text-align: center; margin-top: 8px; line-height: 1.4; }
+.retry-btn { display: block; width: 100%; padding: 11px; margin: 0 0 12px;
+  border-radius: 12px; background: transparent; border: 1px solid var(--border); color: var(--muted); font-size: 13px; cursor: pointer; font-family: inherit; }
+.retry-btn:hover { border-color: var(--accent); color: var(--accent); }
 
 /* Offers */
 .section-title { font-size: 12px; font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: .06em; margin-bottom: 10px; }
@@ -297,17 +324,23 @@ h1 { font-size: 20px; font-weight: 700; color: var(--accent); }
   <!-- Empty -->
   <div class="screen" id="screenEmpty">
     <div class="empty-wrap">
-      <div class="empty-icon">🛒</div>
-      <div class="empty-title">Нет предложений</div>
-      <div class="empty-desc">Сейчас нет доступных заявок на покупку.<br>Попробуйте чуть позже.</div>
-      <button class="retry-btn" onclick="loadOffers()">Обновить</button>
-    </div>
-    <div class="request-banner" style="margin-top:14px">
-      <div class="request-banner-text">
-        <b>Нужна конкретная сумма?</b>
-        Оставьте запрос — оператор подберёт условия
+      <div class="empty-top">
+        <div class="empty-icon">🛒</div>
+        <div class="empty-title">Нет предложений</div>
+        <div class="empty-desc">Сейчас нет активных заявок на покупку.</div>
       </div>
-      <button class="request-banner-btn" onclick="showRequestScreen()">Запрос</button>
+      <div class="empty-rate-block">
+        <div class="empty-rate-label">Актуальный курс покупки</div>
+        <div class="empty-rate-value">1 USDT = <span id="emptyRateVal">…</span> ₽</div>
+        <div class="empty-rate-sub">Курс Rapira + <span>1%</span> · обновляется каждые 2 мин</div>
+      </div>
+      <div class="empty-request-block">
+        <button class="retry-btn" onclick="loadOffers()">↻ Обновить предложения</button>
+        <button class="empty-request-btn" onclick="showRequestScreen()">
+          💬 Оставить запрос на покупку
+        </button>
+        <div class="empty-request-hint">Укажите сумму — оператор подберёт условия в течение 10 минут</div>
+      </div>
     </div>
   </div>
 
@@ -368,7 +401,7 @@ h1 { font-size: 20px; font-weight: 700; color: var(--accent); }
   <div class="screen" id="screenRequest">
     <div class="req-form-card">
       <div class="req-form-title">💬 Запрос на покупку</div>
-      <div class="req-form-desc">Укажите диапазон суммы и количество ордеров. Оператор найдёт подходящее предложение — у вас будет <b>7 минут</b> чтобы взять заявку в работу.</div>
+      <div class="req-form-desc">Укажите диапазон суммы и количество ордеров. Оператор найдёт подходящее предложение — у вас будет <b>10 минут</b> чтобы взять заявку в работу.</div>
 
       <!-- Active requests list -->
       <div id="activeReqsWrap" style="display:none">
@@ -429,7 +462,7 @@ h1 { font-size: 20px; font-weight: 700; color: var(--accent); }
           </div>
         </div>
 
-        <div class="wait-hint" id="waitHint">⏰ У вас 7 минут чтобы взять заявку в работу. Совет: расширьте диапазон на 5–10% для быстрого совпадения.</div>
+        <div class="wait-hint" id="waitHint">⏰ У вас 10 минут чтобы взять заявку в работу. Совет: расширьте диапазон на 5–10% для быстрого совпадения.</div>
 
         <div class="wait-actions" id="waitActions" style="display:none">
           <button class="wait-btn wait-btn-primary" id="waitGoBtn" onclick="goToFoundDeal()">🚀 Перейти к сделке</button>
@@ -445,7 +478,7 @@ h1 { font-size: 20px; font-weight: 700; color: var(--accent); }
 <script>
 const API = (localStorage.getItem('worker_base') || 'https://client-qr-pay.kireeshka73.workers.dev').replace(/\/+$/, '');
 const CF_BASE = 'https://api.crossflag.org';
-const REQUEST_TTL_MS = 7 * 60 * 1000;
+const REQUEST_TTL_MS = 10 * 60 * 1000;
 
 let rate = 0;
 let deal = null;
@@ -503,6 +536,8 @@ async function loadOffers() {
     if (rateD?.rate) {
       rate = Number(rateD.rate);
       document.getElementById('rateVal').textContent = rate.toFixed(2);
+      const emptyRateEl = document.getElementById('emptyRateVal');
+      if (emptyRateEl) emptyRateEl.textContent = rate.toFixed(2);
     }
     const offers = Array.isArray(offersD?.offers) ? offersD.offers : [];
     if (!offers.length) { show('screenEmpty'); return; }
