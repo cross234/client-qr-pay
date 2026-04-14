@@ -330,9 +330,9 @@ h1 { font-size: 20px; font-weight: 700; color: var(--accent); }
         <div class="empty-desc">Сейчас нет активных заявок на покупку.</div>
       </div>
       <div class="empty-rate-block">
-        <div class="empty-rate-label">Актуальный курс покупки</div>
-        <div class="empty-rate-value">1 USDT = <span id="emptyRateVal">…</span> ₽</div>
-        <div class="empty-rate-sub">Курс Rapira + <span>1%</span> · обновляется каждые 2 мин</div>
+        <div class="empty-rate-label">Примерный курс</div>
+        <div class="empty-rate-value"><span id="emptyRateVal">…</span> ₽</div>
+        <div class="empty-rate-sub">Обновляется каждые 2 мин</div>
       </div>
       <div class="empty-request-block">
         <button class="retry-btn" onclick="loadOffers()">↻ Обновить предложения</button>
@@ -537,7 +537,7 @@ async function loadOffers() {
       rate = Number(rateD.rate);
       document.getElementById('rateVal').textContent = rate.toFixed(2);
       const emptyRateEl = document.getElementById('emptyRateVal');
-      if (emptyRateEl) emptyRateEl.textContent = rate.toFixed(2);
+      if (emptyRateEl) emptyRateEl.textContent = (rate * 1.01).toFixed(2);
     }
     const offers = Array.isArray(offersD?.offers) ? offersD.offers : [];
     if (!offers.length) { show('screenEmpty'); return; }
