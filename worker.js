@@ -339,6 +339,61 @@ async function handleBotWebhook(req, env) {
     return json({ ok: true });
   }
 
+  if (text === "/mw_on" || text === "/mw_off") {
+    const enable = text === "/mw_on";
+    const chatType = msg.chat?.type || "private";
+
+    // Проверяем права: либо владелец/админ чата, либо в списке adminTgIds
+    const cfg = await getSettings(env);
+    const isBotAdmin = (cfg.adminTgIds || []).map(String).includes(tgId);
+    let isChatAdmin = isBotAdmin;
+
+    if (!isBotAdmin && chatType !== "private") {
+      try {
+        const member = await tg(env, "getChatMember", { chat_id: chatId, user_id: Number(tgId) });
+        const status = member?.result?.status || "";
+        isChatAdmin = status === "administrator" || status === "creator";
+      } catch {}
+    }
+
+    if (chatType === "private") isChatAdmin = true; // в личке всегда разрешаем
+
+    if (!isChatAdmin) {
+      await tgSend(env, chatId, "⛔️ Только администраторы чата могут управлять Moon Wallet.");
+      return json({ ok: true });
+    }
+
+    const webAppUrl = "https://cross234.github.io/client-qr-pay/";
+
+    if (enable) {
+      await kvPut(env, `chat_mw:${chatId}`, { enabled: true, enabledAt: now(), enabledBy: tgId });
+      // Устанавливаем кнопку меню в чате
+      await tg(env, "setChatMenuButton", {
+        chat_id: chatId,
+        menu_button: { type: "web_app", text: "Moon Wallet", web_app: { url: webAppUrl } }
+      });
+      await tgSend(env, chatId,
+        `🌙 <b>Moon Wallet включён!</b>\n\n` +
+        `В этом чате активированы запросы на покупку USDT.\n` +
+        `Кнопка кошелька появилась в меню.\n\n` +
+        `Для отключения: /mw_off`
+      );
+    } else {
+      await kvDel(env, `chat_mw:${chatId}`);
+      // Убираем кнопку меню
+      await tg(env, "setChatMenuButton", {
+        chat_id: chatId,
+        menu_button: { type: "default" }
+      });
+      await tgSend(env, chatId,
+        `🔴 <b>Moon Wallet отключён.</b>\n\n` +
+        `Запросы на покупку USDT в этом чате деактивированы.\n\n` +
+        `Для включения: /mw_on`
+      );
+    }
+    return json({ ok: true });
+  }
+
   return json({ ok: true });
 }
 
