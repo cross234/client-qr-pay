@@ -1923,6 +1923,28 @@ async function handleExchangeDeal(req, env, offerId) {
 
 const BUY_REQ_TTL_MS = 10 * 60 * 1000; // 10 minutes
 
+// Broadcast a new buy request to all /mw_on enabled chats
+async function broadcastBuyRequestToMwChats(env, rec) {
+  const keys = await kvList(env, "chat_mw:");
+  const rangeText = rec.minRub === rec.maxRub
+    ? `${rec.minRub.toLocaleString("ru-RU")} ₽`
+    : `${rec.minRub.toLocaleString("ru-RU")}–${rec.maxRub.toLocaleString("ru-RU")} ₽`;
+  const rateText = rec.approxRate ? `\n💱 Примерный курс: <b>${Number(rec.approxRate).toFixed(2)} ₽</b>` : "";
+  const text =
+    `🌙 <b>Новый запрос на покупку USDT</b>\n\n` +
+    `💰 Сумма: <b>${rangeText}</b>${rateText}\n` +
+    `👤 ${rec.name || "Пользователь"}\n\n` +
+    `Для выполнения обратитесь через Moon Wallet.`;
+  for (const key of keys) {
+    try {
+      const chatData = await kvGet(env, key);
+      if (!chatData?.enabled) continue;
+      const chatId = key.replace("chat_mw:", "");
+      await tgSend(env, chatId, text);
+    } catch {}
+  }
+}
+
 async function handleExchangeBuyRequest(req, env) {
   const [user, err] = await requireUser(req, env);
   if (err) return err;
@@ -1970,6 +1992,9 @@ async function handleExchangeBuyRequest(req, env) {
       await kvPut(env, `buyreq:${user.tgId}:${reqId}`, reqRec);
     }
   } catch {}
+
+  // Broadcast to all /mw_on enabled chats (fire and forget)
+  broadcastBuyRequestToMwChats(env, reqRec).catch(() => {});
 
   return json({
     ok: true, id: reqId, status: "PENDING",
