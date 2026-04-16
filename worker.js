@@ -250,6 +250,55 @@ async function adjustBalance(env, tgId, deltaMicro, reason) {
 async function handleBotWebhook(req, env) {
   let body;
   try { body = await req.json(); } catch { return json({ ok: true }); }
+
+  // ── Callback query (inline buttons) ─────────────────────────
+  if (body.callback_query) {
+    const cq = body.callback_query;
+    const cqChatId = cq.message?.chat?.id;
+    const cqMsgId  = cq.message?.message_id;
+    const adminId  = String(cq.from?.id || "");
+    const data     = String(cq.data || "");
+    await tg(env, "answerCallbackQuery", { callback_query_id: cq.id });
+
+    const cfg = await getSettings(env);
+    const isAdmin = (cfg.adminTgIds || []).map(String).includes(adminId);
+    if (!isAdmin) return json({ ok: true });
+
+    // bal_reset:{tgId}, bal_debit:{tgId}, bal_credit:{tgId}
+    const [action, targetTgId] = data.split(":");
+    if (!targetTgId || !["bal_reset","bal_debit","bal_credit"].includes(action)) return json({ ok: true });
+
+    const targetUser = await getUser(env, targetTgId);
+    if (!targetUser) {
+      await tg(env, "editMessageText", { chat_id: cqChatId, message_id: cqMsgId, text: "❌ Пользователь не найден." });
+      return json({ ok: true });
+    }
+
+    if (action === "bal_reset") {
+      const prev = microToUsdt(targetUser.balanceMicro || 0).toFixed(2);
+      targetUser.balanceMicro = 0;
+      targetUser.updatedAt = now();
+      await saveUser(env, targetUser);
+      await tg(env, "editMessageText", {
+        chat_id: cqChatId, message_id: cqMsgId,
+        text: `✅ Баланс @${targetUser.username || targetTgId} обнулён.\nБыло: <b>${prev} USDT</b>`,
+        parse_mode: "HTML"
+      });
+      return json({ ok: true });
+    }
+
+    // Для Списать / Начислить — сохраняем ожидание и просим ввести сумму
+    const pendingKey = `bal_pending:${cqChatId}:${adminId}`;
+    await kvPut(env, pendingKey, { action, targetTgId, msgId: cqMsgId }, { expirationTtl: 300 });
+    const verb = action === "bal_debit" ? "списать" : "начислить";
+    await tgSend(env, cqChatId,
+      `💬 Введите сумму USDT чтобы <b>${verb}</b> @${targetUser.username || targetTgId}:`,
+      { parse_mode: "HTML", reply_markup: { force_reply: true, selective: true } }
+    );
+    return json({ ok: true });
+  }
+
+  // ── Regular message ──────────────────────────────────────────
   const msg = body.message;
   if (!msg || !msg.text) return json({ ok: true });
 
@@ -259,6 +308,45 @@ async function handleBotWebhook(req, env) {
   const from = msg.from || {};
   const tgId = String(from.id || "");
   const username = String(from.username || "").toLowerCase();
+
+  // ── Handle force_reply amount input (Списать / Начислить) ───
+  const cfg0 = await getSettings(env);
+  const isAdmin0 = (cfg0.adminTgIds || []).map(String).includes(tgId);
+  if (isAdmin0 && msg.reply_to_message) {
+    const pendingKey = `bal_pending:${chatId}:${tgId}`;
+    const pending = await kvGet(env, pendingKey);
+    if (pending && (pending.action === "bal_debit" || pending.action === "bal_credit")) {
+      await kvDel(env, pendingKey);
+      const amt = parseFloat(text.replace(",", "."));
+      if (!isFinite(amt) || amt <= 0) {
+        await tgSend(env, chatId, "❌ Некорректная сумма. Введите число, например: 10.5");
+        return json({ ok: true });
+      }
+      const amtMicro = usdtToMicro(amt);
+      const targetUser = await getUser(env, pending.targetTgId);
+      if (!targetUser) { await tgSend(env, chatId, "❌ Пользователь не найден."); return json({ ok: true }); }
+      const prevBal = microToUsdt(targetUser.balanceMicro || 0);
+      if (pending.action === "bal_debit") {
+        if (amtMicro > (targetUser.balanceMicro || 0)) {
+          await tgSend(env, chatId, `❌ Недостаточно средств. Баланс: <b>${prevBal.toFixed(2)} USDT</b>`, { parse_mode: "HTML" });
+          return json({ ok: true });
+        }
+        await adjustBalance(env, pending.targetTgId, -amtMicro, `admin debit by ${tgId}`);
+      } else {
+        await adjustBalance(env, pending.targetTgId, amtMicro, `admin credit by ${tgId}`);
+      }
+      const newUser = await getUser(env, pending.targetTgId);
+      const newBal = microToUsdt(newUser.balanceMicro || 0).toFixed(2);
+      const verb = pending.action === "bal_debit" ? "Списано" : "Начислено";
+      await tgSend(env, chatId,
+        `✅ <b>${verb} ${amt.toFixed(2)} USDT</b>\n` +
+        `👤 @${targetUser.username || pending.targetTgId}\n` +
+        `Было: ${prevBal.toFixed(2)} → Стало: <b>${newBal} USDT</b>`,
+        { parse_mode: "HTML" }
+      );
+      return json({ ok: true });
+    }
+  }
 
   if (text === "/start" || text.startsWith("/start ")) {
     // Register user
@@ -337,6 +425,42 @@ async function handleBotWebhook(req, env) {
     }
     const bal = microToUsdt(user.balanceMicro || 0);
     await tgSend(env, chatId, `💰 Ваш баланс: <b>${bal.toFixed(2)} USDT</b>`);
+    return json({ ok: true });
+  }
+
+  if (text.startsWith("/bal_mw")) {
+    const cfg = await getSettings(env);
+    const isAdmin = (cfg.adminTgIds || []).map(String).includes(tgId);
+    if (!isAdmin) return json({ ok: true });
+
+    const parts = text.split(/\s+/);
+    const rawTarget = String(parts[1] || "").replace(/^@/, "").toLowerCase().trim();
+    if (!rawTarget) {
+      await tgSend(env, chatId, "Использование: /bal_mw @username");
+      return json({ ok: true });
+    }
+
+    const targetUser = await getUserByUsername(env, rawTarget);
+    if (!targetUser) {
+      await tgSend(env, chatId, `❌ Пользователь @${rawTarget} не найден.`);
+      return json({ ok: true });
+    }
+
+    const bal = microToUsdt(targetUser.balanceMicro || 0).toFixed(2);
+    await tgSend(env, chatId,
+      `👤 @${targetUser.username || rawTarget}\n` +
+      `💰 Баланс: <b>${bal} USDT</b>`,
+      {
+        parse_mode: "HTML",
+        reply_markup: {
+          inline_keyboard: [[
+            { text: "🔴 Обнулить", callback_data: `bal_reset:${targetUser.tgId}` },
+            { text: "➖ Списать",  callback_data: `bal_debit:${targetUser.tgId}` },
+            { text: "➕ Начислить", callback_data: `bal_credit:${targetUser.tgId}` },
+          ]]
+        }
+      }
+    );
     return json({ ok: true });
   }
 
