@@ -254,7 +254,8 @@ async function handleBotWebhook(req, env) {
   if (!msg || !msg.text) return json({ ok: true });
 
   const chatId = msg.chat.id;
-  const text = msg.text.trim();
+  // Strip bot username suffix from commands (e.g. /mw_on@Moon_walets_bot → /mw_on)
+  const text = msg.text.trim().replace(/^(\/\w+)@\w+/, "$1");
   const from = msg.from || {};
   const tgId = String(from.id || "");
   const username = String(from.username || "").toLowerCase();
