@@ -551,19 +551,36 @@ async function handleBotWebhook(req, env) {
           } else {
             // Mark processed
             await kvPut(env, doneKey, { ts: now() }, { expirationTtl: 3600 * 24 * 30 });
-            // Notify the buyer in DM
-            const sellerName = from.username ? `@${from.username}` : (from.first_name || String(from.id));
+
+            // Detect pay method from requisite
+            const cleanReq = parsed.requisite.replace(/[\s\-()]/g, "");
+            const payMethod = /^\+?7?\d{10}$/.test(cleanReq) ? "SBP"
+              : /^\d{16,19}$/.test(cleanReq) ? "CARD"
+              : "BANK";
+
+            // Create MW offer record so exchange.html can detect it
+            const mwOfferId = "mw_" + uid();
+            await kvPut(env, `mw_offer:${mwOfferId}`, {
+              id: mwOfferId,
+              amountRub: parsed.amountRub,
+              rate: parsed.rate,
+              payBank: parsed.bank,
+              payRequisite: parsed.requisite,
+              method: payMethod,
+              status: "NEW",
+              source: "mw_chat",
+              buyerTgId: String(link.tgId),
+              createdAt: now(),
+              expiresAt: now() + 10 * 60 * 1000,
+            }, { expirationTtl: 3600 });
+
+            // Notify the buyer — simple message
             try {
               await tgSend(env, String(link.tgId),
-                `💰 <b>Найден продавец для вашего запроса!</b>\n\n` +
-                `Переведите <b>${Number(parsed.amountRub).toLocaleString("ru-RU")} ₽</b>\n` +
-                `🏦 Банк: <b>${parsed.bank}</b>\n` +
-                `💳 Реквизит: <code>${parsed.requisite}</code>\n` +
-                `💱 Курс: <b>${parsed.rate} ₽/USDT</b>\n\n` +
-                `Продавец: ${sellerName}\n\n` +
-                `После оплаты свяжитесь с продавцом для подтверждения.`
+                `✅ Найдена заявка под ваш запрос!\n\nОткройте Moon Wallet → Купить USDT и нажмите «Перейти к сделке»`
               );
             } catch {}
+
             // Confirm in chat
             await tgSend(env, chatId,
               `✅ Заявка создана.\n` +
@@ -1850,8 +1867,28 @@ async function handleExchangeRate(req, env) {
 }
 
 async function handleExchangeOffers(req, env) {
-  const d = await cfGet("/api/public/buy_offers");
-  return json(d);
+  const cfData = await cfGet("/api/public/buy_offers").catch(() => ({ ok: true, offers: [] }));
+  const cfOffers = Array.isArray(cfData?.offers) ? cfData.offers : [];
+
+  // Add MW chat offers for this specific buyer
+  let mwOffers = [];
+  try {
+    const [user] = await requireUser(req, env);
+    if (user?.tgId) {
+      const keys = await kvList(env, "mw_offer:");
+      for (const key of keys) {
+        try {
+          const o = await kvGet(env, key);
+          if (!o || o.status !== "NEW") continue;
+          if (o.buyerTgId && String(o.buyerTgId) !== String(user.tgId)) continue;
+          if (o.expiresAt && Date.now() > o.expiresAt) continue;
+          mwOffers.push(o);
+        } catch {}
+      }
+    }
+  } catch {}
+
+  return json({ ...cfData, offers: [...mwOffers, ...cfOffers] });
 }
 
 async function handleExchangeLocks(req, env) {
@@ -1874,6 +1911,39 @@ async function handleExchangeReserve(req, env) {
 
   // Ensure user has USDT deposit address
   const address = await ensureDepositAddress(env, user);
+
+  // MW chat offer — handle locally
+  if (offerId.startsWith("mw_")) {
+    const offer = await kvGet(env, `mw_offer:${offerId}`);
+    if (!offer) return bad("Offer not found", 404);
+    if (offer.status !== "NEW") return bad("Offer already reserved");
+    if (offer.buyerTgId && String(offer.buyerTgId) !== String(user.tgId)) return bad("Not your offer", 403);
+    if (offer.expiresAt && Date.now() > offer.expiresAt) return bad("Offer expired");
+
+    const newReserveId = reserveId || uid();
+    const expiresAt = now() + 20 * 60 * 1000;
+    offer.status = "RESERVED";
+    offer.reservedBy = String(user.tgId);
+    offer.reserveId = newReserveId;
+    offer.reservedAt = now();
+    await kvPut(env, `mw_offer:${offerId}`, offer, { expirationTtl: 3600 * 2 });
+    await kvPut(env, `mw_reserve:${newReserveId}`, { offerId, tgId: String(user.tgId), expiresAt }, { expirationTtl: 3600 * 2 });
+
+    const dealKey = `exch:${user.tgId}:${offerId}`;
+    await kvPut(env, dealKey, {
+      offerId, reserveId: newReserveId, status: "RESERVED",
+      amountRub: offer.amountRub, rate: offer.rate,
+      usdt: (Number(offer.amountRub) / Number(offer.rate)).toFixed(6),
+      payBank: offer.payBank, payRequisite: offer.payRequisite, method: offer.method,
+      expiresAt, source: "mw_chat", createdAt: now(),
+    });
+    const idx = (await kvGet(env, `exch_idx:${user.tgId}`)) || [];
+    if (!idx.includes(offerId)) idx.unshift(offerId);
+    await kvPut(env, `exch_idx:${user.tgId}`, idx.slice(0, 50));
+
+    return json({ ok: true, reserveId: newReserveId, expiresAt,
+      offer: { amountRub: offer.amountRub, rate: offer.rate, payBank: offer.payBank, payRequisite: offer.payRequisite, method: offer.method } });
+  }
 
   const payload = {
     id: offerId,
@@ -1928,6 +1998,15 @@ async function handleExchangeMarkPaid(req, env) {
   const reserveId = String(body.reserveId || "").trim();
   if (!offerId) return bad("Missing offer id");
 
+  if (offerId.startsWith("mw_")) {
+    const dealKey = `exch:${user.tgId}:${offerId}`;
+    const deal = (await kvGet(env, dealKey)) || {};
+    await kvPut(env, dealKey, { ...deal, status: "PAID", paidAt: now(), updatedAt: now() });
+    const offer = await kvGet(env, `mw_offer:${offerId}`);
+    if (offer) { offer.status = "PAID"; await kvPut(env, `mw_offer:${offerId}`, offer, { expirationTtl: 3600 * 24 }); }
+    return json({ ok: true });
+  }
+
   const d = await cfPost("/api/public/mark_paid", { id: offerId, reserveId });
 
   // Update local deal record
@@ -1946,6 +2025,15 @@ async function handleExchangeCancel(req, env) {
   const offerId = String(body.id || "").trim();
   const reserveId = String(body.reserveId || "").trim();
   if (!offerId) return bad("Missing offer id");
+
+  if (offerId.startsWith("mw_")) {
+    const offer = await kvGet(env, `mw_offer:${offerId}`);
+    if (offer) { offer.status = "NEW"; delete offer.reservedBy; delete offer.reserveId; await kvPut(env, `mw_offer:${offerId}`, offer, { expirationTtl: 3600 }); }
+    const dealKey = `exch:${user.tgId}:${offerId}`;
+    const deal = (await kvGet(env, dealKey)) || {};
+    await kvPut(env, dealKey, { ...deal, status: "CANCELLED", cancelledAt: now(), updatedAt: now() });
+    return json({ ok: true });
+  }
 
   const d = await cfPost("/api/public/cancel_reserve", {
     id: offerId,
@@ -2177,6 +2265,21 @@ async function handleExchangeSubmitProof(req, env) {
 
   let fd;
   try { fd = await req.formData(); } catch { return bad("Invalid form data"); }
+
+  // For MW chat offers — notify admin, don't forward to CF
+  const offerIdForm = String(fd.get("offerId") || fd.get("offer_id") || "");
+  if (offerIdForm.startsWith("mw_")) {
+    await tgNotifyAdmins(env,
+      `📄 <b>Чек по MW-сделке</b>\n` +
+      `Оффер: <code>${offerIdForm}</code>\n` +
+      `Покупатель: tgId ${user.tgId} @${user.username || "—"}\n` +
+      `Проверьте оплату и зачислите USDT вручную.`
+    );
+    const dealKey = `exch:${user.tgId}:${offerIdForm}`;
+    const deal = (await kvGet(env, dealKey)) || {};
+    await kvPut(env, dealKey, { ...deal, status: "PROOF_SENT", proofSentAt: now(), updatedAt: now() });
+    return json({ ok: true });
+  }
 
   // Forward to crossflag (reserveId acts as auth on crossflag side)
   const out = new FormData();
