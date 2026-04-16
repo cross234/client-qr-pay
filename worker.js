@@ -2103,8 +2103,8 @@ async function handleExchangeBuyRequest(req, env) {
     }
   } catch {}
 
-  // Broadcast to all /mw_on enabled chats (fire and forget)
-  broadcastBuyRequestToMwChats(env, reqRec).catch(() => {});
+  // Broadcast to all /mw_on enabled chats
+  await broadcastBuyRequestToMwChats(env, reqRec).catch(() => {});
 
   return json({
     ok: true, id: reqId, status: "PENDING",
