@@ -519,6 +519,67 @@ async function handleBotWebhook(req, env) {
     return json({ ok: true });
   }
 
+  // ── Handle seller reply to MW buy-request broadcast ──────────
+  if (msg.reply_to_message && text && !text.startsWith("/")) {
+    const chatData = await kvGet(env, `chat_mw:${chatId}`);
+    if (chatData?.enabled) {
+      const replyToMsgId = msg.reply_to_message.message_id;
+      const ownMsgId    = msg.message_id;
+      // Deduplicate: skip if already processed
+      const doneKey = `mw_bcast_done:${chatId}:${ownMsgId}`;
+      const alreadyDone = await kvGet(env, doneKey);
+      if (!alreadyDone) {
+        const link = await getMwBcastLink(env, chatId, replyToMsgId);
+        if (link) {
+          const parsed = parseMwChatReply(text);
+          if (!parsed.ok) {
+            await tgSend(env, chatId,
+              `⛔️ Не удалось создать заявку.\n${parsed.error}\n\n` +
+              `Ответ должен быть ровно в 4 строки:\nСумма\nбанк\nреквизит\nкурс`,
+              { reply_to_message_id: ownMsgId }
+            );
+          } else if (link.minRub > 0 && parsed.amountRub < link.minRub) {
+            await tgSend(env, chatId,
+              `⛔️ Сумма меньше диапазона клиента (мин. ${link.minRub.toLocaleString("ru-RU")} ₽)`,
+              { reply_to_message_id: ownMsgId }
+            );
+          } else if (link.maxRub > 0 && parsed.amountRub > link.maxRub) {
+            await tgSend(env, chatId,
+              `⛔️ Сумма больше диапазона клиента (макс. ${link.maxRub.toLocaleString("ru-RU")} ₽)`,
+              { reply_to_message_id: ownMsgId }
+            );
+          } else {
+            // Mark processed
+            await kvPut(env, doneKey, { ts: now() }, { expirationTtl: 3600 * 24 * 30 });
+            // Notify the buyer in DM
+            const sellerName = from.username ? `@${from.username}` : (from.first_name || String(from.id));
+            try {
+              await tgSend(env, String(link.tgId),
+                `💰 <b>Найден продавец для вашего запроса!</b>\n\n` +
+                `Переведите <b>${Number(parsed.amountRub).toLocaleString("ru-RU")} ₽</b>\n` +
+                `🏦 Банк: <b>${parsed.bank}</b>\n` +
+                `💳 Реквизит: <code>${parsed.requisite}</code>\n` +
+                `💱 Курс: <b>${parsed.rate} ₽/USDT</b>\n\n` +
+                `Продавец: ${sellerName}\n\n` +
+                `После оплаты свяжитесь с продавцом для подтверждения.`
+              );
+            } catch {}
+            // Confirm in chat
+            await tgSend(env, chatId,
+              `✅ Заявка создана.\n` +
+              `Сумма: ${parsed.amountRub} RUB\n` +
+              `Банк: ${parsed.bank}\n` +
+              `Реквизит: ${parsed.requisite}\n` +
+              `Курс: ${parsed.rate}`,
+              { reply_to_message_id: ownMsgId }
+            );
+          }
+          return json({ ok: true });
+        }
+      }
+    }
+  }
+
   return json({ ok: true });
 }
 
@@ -1923,24 +1984,73 @@ async function handleExchangeDeal(req, env, offerId) {
 
 const BUY_REQ_TTL_MS = 10 * 60 * 1000; // 10 minutes
 
+// ── MW Chat Buy System ───────────────────────────────────────
+
+// Save a link: broadcast message → buy request
+async function saveMwBcastLink(env, chatId, messageId, rec) {
+  const key = `mw_bcast:${chatId}:${messageId}`;
+  await kvPut(env, key, {
+    reqId: rec.id,
+    tgId: String(rec.tgId),
+    minRub: rec.minRub,
+    maxRub: rec.maxRub,
+    approxRate: Number(rec.approxRate || 0),
+  }, { expirationTtl: 3600 * 24 * 7 });
+}
+
+// Look up broadcast message link
+async function getMwBcastLink(env, chatId, messageId) {
+  return kvGet(env, `mw_bcast:${chatId}:${messageId}`);
+}
+
+// Parse a 4-line seller reply
+function parseMwChatReply(text) {
+  const lines = String(text || "").split(/\n+/).map(x => x.trim()).filter(Boolean);
+  if (lines.length < 4) return { ok: false, error: "Нужны 4 строки: сумма, банк, реквизит, курс" };
+  function stripLabel(line, labels) {
+    for (const l of labels) {
+      const re = new RegExp("^" + l + "[:\\s]+", "i");
+      if (re.test(line)) return line.replace(re, "").trim();
+    }
+    return line.trim();
+  }
+  const amountStr  = stripLabel(lines[0], ["сумма", "amount"]);
+  const bankStr    = stripLabel(lines[1], ["банк", "bank"]);
+  const reqStr     = stripLabel(lines[2], ["реквизит", "реквизиты", "requisite", "card", "карта", "номер"]);
+  const rateStr    = stripLabel(lines[3], ["курс", "rate", "цена", "price"]);
+  const amountRub  = parseFloat(amountStr.replace(/\s/g, "").replace(",", "."));
+  if (!Number.isFinite(amountRub) || amountRub <= 0) return { ok: false, error: "Не удалось понять сумму" };
+  if (!bankStr)  return { ok: false, error: "Не указан банк" };
+  if (!reqStr)   return { ok: false, error: "Не указан реквизит" };
+  const rate = parseFloat(rateStr.replace(/[^\d.,]/g, "").replace(",", "."));
+  if (!Number.isFinite(rate) || rate <= 0) return { ok: false, error: "Не удалось понять курс" };
+  return { ok: true, amountRub, bank: bankStr, requisite: reqStr, rate };
+}
+
 // Broadcast a new buy request to all /mw_on enabled chats
 async function broadcastBuyRequestToMwChats(env, rec) {
   const keys = await kvList(env, "chat_mw:");
   const rangeText = rec.minRub === rec.maxRub
-    ? `${rec.minRub.toLocaleString("ru-RU")} ₽`
-    : `${rec.minRub.toLocaleString("ru-RU")}–${rec.maxRub.toLocaleString("ru-RU")} ₽`;
-  const rateText = rec.approxRate ? `\n💱 Примерный курс: <b>${Number(rec.approxRate).toFixed(2)} ₽</b>` : "";
+    ? `${Number(rec.minRub).toLocaleString("ru-RU")} ₽`
+    : `${Number(rec.minRub).toLocaleString("ru-RU")}–${Number(rec.maxRub).toLocaleString("ru-RU")} ₽`;
+  const name = rec.name || "Пользователь";
   const text =
-    `🌙 <b>Новый запрос на покупку USDT</b>\n\n` +
-    `💰 Сумма: <b>${rangeText}</b>${rateText}\n` +
-    `👤 ${rec.name || "Пользователь"}\n\n` +
-    `Для выполнения обратитесь через Moon Wallet.`;
+    `🌙 Клиент оставил запрос на покупку USDT:\n\n` +
+    `Клиент: ${name}\n` +
+    `Диапазон суммы: ${rangeText}\n\n` +
+    `Если готовы принять — ответьте на это сообщение в 4 строки:\n\n` +
+    `Сумма\n` +
+    `банк\n` +
+    `реквизит\n` +
+    `курс`;
   for (const key of keys) {
     try {
       const chatData = await kvGet(env, key);
       if (!chatData?.enabled) continue;
       const chatId = key.replace("chat_mw:", "");
-      await tgSend(env, chatId, text);
+      const sent = await tgSend(env, chatId, text);
+      const msgId = sent?.result?.message_id;
+      if (msgId) await saveMwBcastLink(env, chatId, msgId, rec);
     } catch {}
   }
 }
