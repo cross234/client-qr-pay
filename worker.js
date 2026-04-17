@@ -1653,7 +1653,18 @@ async function rapiraFetch(env, path, opts = {}) {
     body = JSON.stringify(opts.json);
   }
 
-  const r = await fetch(url, { method: opts.method || "GET", headers, body });
+  const r = await fetch(url, { method: opts.method || "GET", headers, body, redirect: "manual" });
+  // Handle redirects manually — some Rapira endpoints redirect to the final URL
+  if (r.status >= 300 && r.status < 400) {
+    const location = r.headers.get("Location") || "";
+    // Follow absolute http/https redirects only
+    if (location.startsWith("http://") || location.startsWith("https://")) {
+      const r2 = await fetch(location, { method: "GET", headers: { "Authorization": headers["Authorization"], "Accept": "application/json" } });
+      if (!r2.ok) { const txt2 = await r2.text(); throw new Error(`Rapira redirect ${location} → ${r2.status}: ${txt2.slice(0, 200)}`); }
+      return r2.json();
+    }
+    throw new Error(`Rapira ${path} redirected to invalid location: "${location}"`);
+  }
   if (!r.ok) {
     const txt = await r.text();
     throw new Error(`Rapira ${path} → ${r.status}: ${txt.slice(0, 200)}`);

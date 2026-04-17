@@ -104,6 +104,36 @@ body {
 .amount-big .usdt { font-size: 16px; color: var(--ok); margin-top: 6px; font-weight: 600; }
 .amount-big .rate { font-size: 12px; color: var(--muted); margin-top: 4px; }
 
+/* Manual amount input (when QR has no sum) */
+.amount-input-wrap {
+  display: none; margin: 16px 0;
+  background: var(--card2); border: 1px solid var(--border);
+  border-radius: 16px; padding: 18px 20px;
+}
+.amount-input-wrap.show { display: block; }
+.amount-input-wrap .label {
+  font-size: 13px; color: var(--muted); margin-bottom: 8px;
+}
+.amount-input-wrap input {
+  width: 100%; background: transparent; border: none; outline: none;
+  color: var(--text); font-size: 30px; font-weight: 700;
+  font-family: inherit; padding: 4px 0;
+}
+.amount-input-wrap input::placeholder { color: var(--muted); opacity: .5; }
+.amount-input-wrap .hint {
+  font-size: 12px; color: var(--muted); margin-top: 6px;
+}
+
+.recipient-info {
+  background: var(--card2); border: 1px solid var(--border);
+  border-radius: 12px; padding: 12px 14px;
+  font-size: 13px; color: var(--muted); margin-bottom: 14px;
+  display: none;
+}
+.recipient-info.show { display: block; }
+.recipient-info .name { color: var(--text); font-weight: 600; margin-bottom: 2px; }
+.recipient-info .row { font-size: 12px; }
+
 .insufficient-big {
   color: var(--bad); font-size: 14px; text-align: center;
   margin-top: 8px; display: none;
@@ -207,13 +237,25 @@ body {
     <input type="file" id="fileInput" accept="image/*" capture="environment" style="display:none">
   </div>
 
-  <!-- Step 2: Payment confirmation (just amount) -->
+  <!-- Step 2: Payment confirmation -->
   <div class="pay-confirm" id="payConfirm">
-    <div class="amount-big">
+    <div class="recipient-info" id="recipientInfo">
+      <div class="name" id="recipientName"></div>
+      <div class="row" id="recipientRow"></div>
+    </div>
+
+    <div class="amount-big" id="amountFixed">
       <div class="rub" id="amountRub">0 <span class="rub-sign">₽</span></div>
       <div class="usdt" id="amountUsdt">≈ 0 USDT</div>
       <div class="rate" id="rateInfo"></div>
     </div>
+
+    <div class="amount-input-wrap" id="amountManual">
+      <div class="label">Введите сумму платежа</div>
+      <input type="number" id="amountInput" inputmode="decimal" placeholder="0" step="0.01" min="1">
+      <div class="hint" id="amountHint">≈ 0 USDT</div>
+    </div>
+
     <div class="insufficient-big" id="insufficient">⚠️ Недостаточно средств на балансе</div>
 
     <div class="error-msg" id="errorMsg"></div>
@@ -328,9 +370,9 @@ $('fileInput').addEventListener('change', function(e) {
 
 // ── Parse QR data ──
 function parseQrData(raw) {
-  const result = { raw, fields: {} };
+  const result = { raw, fields: {}, sum: 0, isBank: false };
 
-  // Russian bank QR format: ST00011 or ST00012
+  // 1. Russian bank QR format: ST00011 / ST00012
   // Fields separated by | : Name=...|PersonalAcc=...|BankName=...|BIC=...|Sum=...|Purpose=...
   if (/^ST0001[12]/i.test(raw)) {
     const parts = raw.split('|');
@@ -349,55 +391,105 @@ function parseQrData(raw) {
     result.purpose = result.fields['purpose'] || '';
     result.inn = result.fields['payeeinn'] || result.fields['inn'] || '';
     result.kpp = result.fields['kpp'] || '';
-
-    // Sum is in kopecks in ST00012
     const sumRaw = result.fields['sum'] || '0';
     const sumNum = parseInt(sumRaw, 10);
-    if (sumNum > 0) {
-      result.sum = sumNum / 100; // kopecks → rubles
-    } else {
-      result.sum = 0;
-    }
-
+    if (sumNum > 0) result.sum = sumNum / 100;
     result.isBank = true;
     return result;
   }
 
-  // Try generic URL with amount params
-  // e.g. https://qr.nspk.ru/...?sum=10000&cur=RUB&...
+  // 2. URL-based QR (NSPK SBP, Tinkoff, Sber, etc.)
+  let isUrl = false;
+  let urlObj = null;
   try {
-    const url = new URL(raw);
-    const sumParam = url.searchParams.get('sum') || url.searchParams.get('amount');
+    urlObj = new URL(raw);
+    isUrl = true;
+  } catch(_){}
+
+  if (isUrl) {
+    // Try to pull sum from query
+    const sumParam = urlObj.searchParams.get('sum')
+                  || urlObj.searchParams.get('amount')
+                  || urlObj.searchParams.get('Sum')
+                  || urlObj.searchParams.get('Amount');
     if (sumParam) {
-      result.sum = parseFloat(sumParam) / 100; // usually kopecks
-      if (result.sum < 1) result.sum = parseFloat(sumParam); // fallback: maybe already rubles
+      const n = parseFloat(sumParam);
+      if (!isNaN(n) && n > 0) {
+        // Heuristic: large integers without decimal → kopecks
+        if (Number.isInteger(n) && n >= 1000 && /^\d+$/.test(String(sumParam))) {
+          result.sum = n / 100;
+          if (result.sum < 1) result.sum = n;
+        } else {
+          result.sum = n;
+        }
+      }
     }
-    result.name = url.searchParams.get('name') || url.searchParams.get('payee') || '';
-    result.purpose = url.searchParams.get('purpose') || url.searchParams.get('description') || '';
-    result.isBank = !!(result.sum && result.sum > 0);
-    return result;
-  } catch(_) {}
+    result.name = urlObj.searchParams.get('name')
+               || urlObj.searchParams.get('payee')
+               || urlObj.searchParams.get('merchant')
+               || '';
+    result.purpose = urlObj.searchParams.get('purpose')
+                  || urlObj.searchParams.get('description')
+                  || urlObj.searchParams.get('comment')
+                  || '';
 
-  // СБП (SBP) QR: https://qr.nspk.ru/...
-  if (raw.includes('qr.nspk.ru')) {
-    // NSPK QR codes — the amount might be embedded differently
-    const mSum = raw.match(/[?&]sum=(\d+)/i);
-    if (mSum) result.sum = parseInt(mSum[1], 10) / 100;
-    result.isBank = true;
-    return result;
+    // Recognize known payment hosts (SBP, banks)
+    const host = (urlObj.hostname || '').toLowerCase();
+    const paymentHosts = [
+      'qr.nspk.ru', 'sub.nspk.ru', 'qr.sbp.ru',
+      'qr.sberbank.ru', 'pay.sber.ru',
+      'qr.tinkoff.ru', 'pay.tinkoff.ru',
+      'qr.alfabank.ru', 'pay.alfabank.ru',
+      'qr.vtb.ru', 'pay.vtb.ru',
+      'qr.raiffeisen.ru', 'qr.psbank.ru', 'qr.gazprombank.ru',
+    ];
+    const isKnownPayHost = paymentHosts.some(h => host === h || host.endsWith('.' + h));
+    // Anything that looks like a payment URL
+    if (isKnownPayHost
+        || /\b(qr|pay|sbp|nspk)\b/i.test(host)
+        || /\b(qr|pay|sbp|nspk)\b/i.test(urlObj.pathname)) {
+      result.isBank = true;
+      return result;
+    }
+
+    // Unknown URL — keep going to other heuristics
   }
 
-  // Simple text: Sum=1234
-  const mSum = raw.match(/Sum=(\d+\.?\d*)/i);
+  // 3. Generic key=value detection inside the string
+  const mSum = raw.match(/(?:^|[^\w])Sum=(\d+\.?\d*)/i);
   if (mSum) {
-    result.sum = parseFloat(mSum[1]);
-    if (result.sum > 10000) result.sum = result.sum / 100; // likely kopecks
+    const n = parseFloat(mSum[1]);
+    if (Number.isInteger(n) && n > 10000 && /^\d+$/.test(mSum[1])) {
+      result.sum = n / 100;
+    } else {
+      result.sum = n;
+    }
+    result.isBank = true;
+  }
+  const mAmt = raw.match(/amount[=:](\d+\.?\d*)/i);
+  if (mAmt && !result.sum) {
+    result.sum = parseFloat(mAmt[1]);
     result.isBank = true;
   }
 
-  const mAmt = raw.match(/amount[=:](\d+\.?\d*)/i);
-  if (mAmt) {
-    result.sum = parseFloat(mAmt[1]);
+  // 4. Bank requisites in plain text (БИК, ИНН, Р/С etc.)
+  if (!result.isBank) {
+    if (/(БИК|BIC)\s*[:=]?\s*\d{9}/i.test(raw)
+        || /(ИНН|INN)\s*[:=]?\s*\d{10,12}/i.test(raw)
+        || /(Р\/С|расчет(ный)?\s*счет|счет\s*получ)/i.test(raw)
+        || /\d{20}/.test(raw)) {
+      result.isBank = true;
+      const mInn = raw.match(/(?:ИНН|INN)\s*[:=]?\s*(\d{10,12})/i);
+      const mBic = raw.match(/(?:БИК|BIC)\s*[:=]?\s*(\d{9})/i);
+      const mAcc = raw.match(/(?:Р\/С|счет)\s*[:=]?\s*(\d{20})/i);
+      if (mInn) result.inn = mInn[1];
+      if (mBic) result.bic = mBic[1];
+      if (mAcc) result.account = mAcc[1];
+    }
+  }
+
+  // 5. Last resort: if URL was valid but unknown host — still let the user pay
+  if (!result.isBank && isUrl) {
     result.isBank = true;
   }
 
@@ -406,19 +498,32 @@ function parseQrData(raw) {
 
 // ── On QR scanned ──
 function onQrScanned(data) {
-  // If it's from image upload, we can't decode — send to server
+  if (!data || typeof data !== 'string') {
+    showQrError(String(data || ''), 'Пустые данные QR-кода.');
+    return;
+  }
+
+  // If it's from image upload, we can't decode — show hint
   if (data.startsWith('QR_FROM_IMAGE:')) {
-    // For image uploads, we need server-side decoding or jsQR
-    // For now, show error that native scan is preferred
     showQrError(data, 'Используйте сканер камеры для распознавания QR-кода.');
     return;
   }
 
   parsedQr = parseQrData(data);
 
-  if (!parsedQr.sum || parsedQr.sum <= 0) {
-    showQrError(data, null);
-    return;
+  // Accept any payment-like QR. Only show error for clearly non-payment QRs
+  // (e.g. plain text / random URL with no payment markers).
+  if (!parsedQr.isBank) {
+    // Be permissive: even if not detected as payment, still allow user to pay
+    // anything that's not obviously a junk text. Consider it payable when:
+    // - it has digits (could be a phone, account, amount)
+    // - or it's any URL
+    const looksPayable = /\d/.test(data) || /^(https?:|tel:|sbp:)/i.test(data);
+    if (!looksPayable) {
+      showQrError(data, 'Этот QR не похож на платёжный.');
+      return;
+    }
+    parsedQr.isBank = true;
   }
 
   showPayConfirmation();
@@ -438,32 +543,79 @@ function showPayConfirmation() {
   $('scanSection').style.display = 'none';
   $('qrError').classList.remove('show');
 
-  // Amount display
-  const rub = parsedQr.sum;
-  $('amountRub').innerHTML = formatNum(rub) + ' <span class="rub-sign">₽</span>';
-
-  if (currentRate && currentRate > 0) {
-    const usdt = rub / currentRate;
-    $('amountUsdt').textContent = '≈ ' + usdt.toFixed(2) + ' USDT';
-    $('rateInfo').textContent = '1 USDT ≈ ' + currentRate.toFixed(2) + ' ₽';
-
-    if (currentBalance !== null && usdt > currentBalance) {
-      $('insufficient').classList.add('show');
-      $('confirmBtn').disabled = true;
-    } else {
-      $('insufficient').classList.remove('show');
-      $('confirmBtn').disabled = false;
-    }
+  // Recipient info (if any)
+  const name = parsedQr.name || '';
+  const bank = parsedQr.bankName || '';
+  const acc = parsedQr.account || '';
+  const inn = parsedQr.inn || '';
+  if (name || bank || acc || inn) {
+    $('recipientName').textContent = name || (bank ? bank : 'Получатель');
+    const rowParts = [];
+    if (bank && name) rowParts.push(bank);
+    if (acc) rowParts.push('Счёт: ' + acc.slice(-4).padStart(acc.length, '•').slice(-8));
+    if (inn) rowParts.push('ИНН: ' + inn);
+    $('recipientRow').textContent = rowParts.join(' · ');
+    $('recipientInfo').classList.add('show');
   } else {
-    $('amountUsdt').textContent = 'Загрузка курса...';
-    $('confirmBtn').disabled = true;
-    // Retry loading rate
-    loadRate().then(() => {
-      if (currentRate > 0) showPayConfirmation();
-    });
+    $('recipientInfo').classList.remove('show');
+  }
+
+  const hasSum = parsedQr.sum && parsedQr.sum > 0;
+
+  if (hasSum) {
+    // Fixed amount from QR
+    $('amountFixed').style.display = '';
+    $('amountManual').classList.remove('show');
+    const rub = parsedQr.sum;
+    $('amountRub').innerHTML = formatNum(rub) + ' <span class="rub-sign">₽</span>';
+    updateUsdtForRub(rub, $('amountUsdt'), $('rateInfo'), true);
+  } else {
+    // Manual amount entry
+    $('amountFixed').style.display = 'none';
+    $('amountManual').classList.add('show');
+    const inp = $('amountInput');
+    inp.value = '';
+    setTimeout(() => { try { inp.focus(); } catch(_){} }, 100);
+    inp.oninput = () => {
+      const v = parseFloat(inp.value) || 0;
+      updateUsdtForRub(v, $('amountHint'), null, false);
+    };
+    updateUsdtForRub(0, $('amountHint'), null, false);
   }
 
   $('payConfirm').classList.add('show');
+}
+
+function updateUsdtForRub(rub, usdtEl, rateEl, isMain) {
+  if (!currentRate || currentRate <= 0) {
+    if (usdtEl) usdtEl.textContent = 'Загрузка курса...';
+    if (isMain) {
+      $('confirmBtn').disabled = true;
+      loadRate().then(() => {
+        if (currentRate > 0) showPayConfirmation();
+      });
+    }
+    return;
+  }
+
+  const usdt = rub / currentRate;
+  if (usdtEl) usdtEl.textContent = '≈ ' + (rub > 0 ? usdt.toFixed(2) : '0') + ' USDT';
+  if (rateEl) rateEl.textContent = '1 USDT ≈ ' + currentRate.toFixed(2) + ' ₽';
+
+  if (rub <= 0) {
+    $('insufficient').classList.remove('show');
+    $('confirmBtn').disabled = !isMain ? false : true;
+    if (!isMain) $('confirmBtn').disabled = true;
+    return;
+  }
+
+  if (currentBalance !== null && usdt > currentBalance) {
+    $('insufficient').classList.add('show');
+    $('confirmBtn').disabled = true;
+  } else {
+    $('insufficient').classList.remove('show');
+    $('confirmBtn').disabled = false;
+  }
 }
 
 function formatNum(n) {
@@ -486,7 +638,28 @@ function resetToScan() {
 
 // ── Confirm payment ──
 $('confirmBtn').onclick = async () => {
-  if (!parsedQr || !parsedQr.sum) return;
+  if (!parsedQr) return;
+
+  // Take amount from QR if it had one, otherwise from manual input
+  let amountRub = (parsedQr.sum && parsedQr.sum > 0) ? parsedQr.sum : 0;
+  if (!amountRub) {
+    amountRub = parseFloat($('amountInput').value) || 0;
+  }
+  if (!amountRub || amountRub <= 0) {
+    $('errorMsg').textContent = 'Введите сумму платежа';
+    $('errorMsg').classList.add('show');
+    return;
+  }
+
+  // Re-check balance with the entered amount
+  if (currentRate > 0 && currentBalance !== null) {
+    const usdt = amountRub / currentRate;
+    if (usdt > currentBalance) {
+      $('errorMsg').textContent = 'Недостаточно средств на балансе';
+      $('errorMsg').classList.add('show');
+      return;
+    }
+  }
 
   const btn = $('confirmBtn');
   $('errorMsg').classList.remove('show');
@@ -499,7 +672,7 @@ $('confirmBtn').onclick = async () => {
       headers: { ...headers, 'Content-Type': 'application/json' },
       body: JSON.stringify({
         qrData: parsedQr.raw,
-        amountRub: parsedQr.sum,
+        amountRub: amountRub,
         recipient: parsedQr.name || '',
         bankName: parsedQr.bankName || '',
         account: parsedQr.account || '',
