@@ -123,6 +123,13 @@ body {
 .amount-input-wrap .hint {
   font-size: 12px; color: var(--muted); margin-top: 6px;
 }
+.qr-raw-preview {
+  margin-top: 12px; padding: 10px;
+  background: rgba(0,0,0,.2); border-radius: 8px;
+  font-size: 11px; color: var(--muted);
+  word-break: break-all; max-height: 80px; overflow: auto;
+  font-family: ui-monospace, monospace; line-height: 1.4;
+}
 
 .recipient-info {
   background: var(--card2); border: 1px solid var(--border);
@@ -251,9 +258,10 @@ body {
     </div>
 
     <div class="amount-input-wrap" id="amountManual">
-      <div class="label">Введите сумму платежа</div>
+      <div class="label">В QR-коде нет суммы — введите вручную</div>
       <input type="number" id="amountInput" inputmode="decimal" placeholder="0" step="0.01" min="1">
       <div class="hint" id="amountHint">≈ 0 USDT</div>
+      <div class="qr-raw-preview" id="qrRawPreview"></div>
     </div>
 
     <div class="insufficient-big" id="insufficient">⚠️ Недостаточно средств на балансе</div>
@@ -407,13 +415,17 @@ function parseQrData(raw) {
   } catch(_){}
 
   if (isUrl) {
-    // Try to pull sum from query
-    const sumParam = urlObj.searchParams.get('sum')
-                  || urlObj.searchParams.get('amount')
-                  || urlObj.searchParams.get('Sum')
-                  || urlObj.searchParams.get('Amount');
+    // Try to pull sum from many possible query param names
+    const sumKeys = ['sum','Sum','SUM','amount','Amount','AMOUNT',
+                     'value','Value','total','Total','pay','Pay',
+                     'price','Price','money','Money'];
+    let sumParam = null;
+    for (const k of sumKeys) {
+      const v = urlObj.searchParams.get(k);
+      if (v != null && v !== '') { sumParam = v; break; }
+    }
     if (sumParam) {
-      const n = parseFloat(sumParam);
+      const n = parseFloat(String(sumParam).replace(',', '.'));
       if (!isNaN(n) && n > 0) {
         // Heuristic: large integers without decimal → kopecks
         if (Number.isInteger(n) && n >= 1000 && /^\d+$/.test(String(sumParam))) {
@@ -581,6 +593,9 @@ function showPayConfirmation() {
       updateUsdtForRub(v, $('amountHint'), null, false);
     };
     updateUsdtForRub(0, $('amountHint'), null, false);
+    // Show raw QR data so user can see what was scanned
+    const raw = String(parsedQr.raw || '');
+    $('qrRawPreview').textContent = 'QR содержит: ' + (raw.length > 200 ? raw.slice(0, 200) + '...' : raw);
   }
 
   $('payConfirm').classList.add('show');
