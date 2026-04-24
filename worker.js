@@ -97,12 +97,32 @@ async function saveSettings(env, patch) {
 // ── Rate ─────────────────────────────────────────────────────
 let _rateCache = { rate: 0, ts: 0 };
 
+// Fetch with a hard timeout so slow external APIs never block /api/me
+function fetchWithTimeout(url, opts, ms) {
+  const ctrl = new AbortController();
+  const t = setTimeout(() => ctrl.abort(), ms);
+  return fetch(url, { ...opts, signal: ctrl.signal }).finally(() => clearTimeout(t));
+}
+
 async function fetchRapiraRate() {
-  // Try Rapira first
+  // Primary: crossflag (3 s timeout — it has its own KV lastRates fallback)
   try {
-    const r = await fetch("https://api.rapira.net/market/overview", {
-      headers: { "User-Agent": "Mozilla/5.0" }
-    });
+    const r = await fetchWithTimeout(
+      "https://api.crossflag.org/api/public/rapira_rate",
+      { headers: { Accept: "application/json" } },
+      3000
+    );
+    const j = await r.json();
+    if (j.ok && j.rate > 0) return Number(j.rate);
+  } catch {}
+
+  // Fallback: Rapira direct (2 s timeout)
+  try {
+    const r = await fetchWithTimeout(
+      "https://api.rapira.net/market/overview",
+      { headers: { "User-Agent": "Mozilla/5.0" } },
+      2000
+    );
     const j = await r.json();
     const allPairs = [
       ...(j.changeRank || []),
@@ -113,18 +133,15 @@ async function fetchRapiraRate() {
     if (usdt && usdt.close > 0) return Number(usdt.close);
   } catch {}
 
-  // Fallback: Garantex
+  // Fallback: Garantex (2 s timeout)
   try {
-    const r = await fetch("https://garantex.org/api/v2/trades?market=usdtrub&limit=1");
+    const r = await fetchWithTimeout(
+      "https://garantex.org/api/v2/trades?market=usdtrub&limit=1",
+      {},
+      2000
+    );
     const j = await r.json();
     if (Array.isArray(j) && j.length > 0 && j[0].price) return Number(j[0].price);
-  } catch {}
-
-  // Fallback: fetch from a public USDT/RUB source
-  try {
-    const r = await fetch("https://api.coingecko.com/api/v3/simple/price?ids=tether&vs_currencies=rub");
-    const j = await r.json();
-    if (j.tether && j.tether.rub > 0) return Number(j.tether.rub);
   } catch {}
 
   return 0;
@@ -141,16 +158,27 @@ async function getRate(env) {
   if (cfg.rateMode === "manual" && cfg.manualRate > 0) {
     return applyMarkup(cfg.manualRate, pct);
   }
-  // rapira
+  // In-memory cache (valid 60 s, survives within same isolate)
   if (_rateCache.rate > 0 && now() - _rateCache.ts < 60000) {
     return applyMarkup(_rateCache.rate, pct);
   }
+  // KV-persisted cache (valid 10 min, survives cold starts)
+  try {
+    const cached = await kvGet(env, "mw:rate_cache");
+    if (cached?.rate > 0 && now() - (cached.ts || 0) < 600000) {
+      _rateCache = { rate: cached.rate, ts: cached.ts };
+      return applyMarkup(cached.rate, pct);
+    }
+  } catch {}
+  // Fetch live rate (total budget: ~7 s across all sources)
   const rate = await fetchRapiraRate();
   if (rate > 0) {
     _rateCache = { rate, ts: now() };
+    // Save to KV so next cold start gets it instantly
+    kvPut(env, "mw:rate_cache", { rate, ts: now() }, { expirationTtl: 3600 }).catch(() => {});
     return applyMarkup(rate, pct);
   }
-  // fallback
+  // Last resort: stale in-memory value
   return _rateCache.rate > 0 ? applyMarkup(_rateCache.rate, pct) : 0;
 }
 
@@ -246,97 +274,318 @@ async function adjustBalance(env, tgId, deltaMicro, reason) {
 //  ROUTE HANDLERS
 // ════════════════════════════════════════════════════════════
 
+function escHtml(s) {
+  return String(s || "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+}
+
+// ── MW-native P2P offers ──────────────────────────────────────
+async function getMwOffers(env) {
+  const o = await kvGet(env, "mwOffers");
+  if (!Array.isArray(o)) return [];
+  const n = now();
+  let changed = false;
+  const cleaned = o.map(offer => {
+    if (String(offer.status || "").toUpperCase() === "RESERVED" && offer.expiresAt && n > offer.expiresAt) {
+      changed = true;
+      return { ...offer, status: "NEW", reservedBy: null, reserveId: null, reservedAt: null, expiresAt: null };
+    }
+    return offer;
+  });
+  if (changed) kvPut(env, "mwOffers", cleaned).catch(() => {});
+  return cleaned;
+}
+async function saveMwOffers(env, offers) {
+  await kvPut(env, "mwOffers", offers);
+}
+function parseMwAdminReply(text) {
+  // Format: <amountRub> <rate> <requisite> <bank...>
+  // e.g. "25000 90.5 79001234567 Сбербанк"
+  const parts = String(text || "").trim().split(/\s+/);
+  if (parts.length < 4) return null;
+  const amountRub = Math.floor(Number(String(parts[0]).replace(/[^\d.]/g, "")));
+  const rate = Number(String(parts[1]).replace(",", "."));
+  const payRequisite = String(parts[2]);
+  const payBank = parts.slice(3).join(" ").trim();
+  if (!amountRub || amountRub < 100) return null;
+  if (!rate || rate < 1 || rate > 9999) return null;
+  if (!payRequisite) return null;
+  if (!payBank) return null;
+  return { amountRub, rate, method: "SBP", payRequisite, payBank };
+}
+async function completeMwDeal(env, offerId, tgId, amountMicro) {
+  const doneKey = `mwdeal:done:${offerId}`;
+  if (await kvGet(env, doneKey)) return { ok: true, skipped: true };
+  await adjustBalance(env, tgId, amountMicro, `P2P buy: ${offerId}`);
+  await kvPut(env, doneKey, { ts: now(), tgId, offerId, amountMicro }, { expirationTtl: 3600 * 24 * 180 });
+  const dealKey = `exch:${tgId}:${offerId}`;
+  const deal = (await kvGet(env, dealKey)) || {};
+  deal.status = "SUCCESS";
+  deal.completedAt = now();
+  deal.creditedMicro = amountMicro;
+  deal.creditedUsdt = (amountMicro / 1e6).toFixed(2);
+  await kvPut(env, dealKey, deal);
+
+  // Bookkeeping: update chat debt
+  const usdtCredited = amountMicro / 1e6;
+  const fromChatId = deal.createdFromChatId;
+  if (fromChatId) {
+    try {
+      const debtKey = `mw_chat_debt:${fromChatId}`;
+      const prevDebt = Number((await kvGet(env, debtKey)) || 0);
+      const newDebt = prevDebt + usdtCredited;
+      await kvPut(env, debtKey, newDebt);
+      const shortId = String(offerId).slice(-8);
+      await tgSend(env, fromChatId,
+        `✅ <b>Сделка BUY ${shortId} завершена успешно</b>\n\n` +
+        `💰 Долг по чату: <b>${newDebt.toFixed(2)} USDT</b>\n` +
+        `(+${usdtCredited.toFixed(2)} USDT за сделку ${shortId})`,
+        { reply_markup: { inline_keyboard: [[
+          { text: "💰 Обнулить долг", callback_data: `mwbal:reset:${fromChatId}` },
+        ]] } }
+      ).catch(() => {});
+    } catch {}
+  }
+
+  try {
+    const idxKey2 = `buyreq_idx:${tgId}`;
+    const idxArr = (await kvGet(env, idxKey2)) || [];
+    for (const reqId of idxArr.slice(0, 30)) {
+      const rec = await kvGet(env, `buyreq:${tgId}:${reqId}`);
+      if (rec && rec.status === "PENDING" && (rec.matchedOfferIds || []).includes(offerId)) {
+        rec.status = "COMPLETED"; rec.completedAt = now();
+        await kvPut(env, `buyreq:${tgId}:${reqId}`, rec);
+        break;
+      }
+    }
+  } catch {}
+  const usdtStr = (amountMicro / 1e6).toFixed(2);
+  await tgSend(env, tgId,
+    `✅ <b>Сделка завершена!</b>\n\n💵 Зачислено: <b>${usdtStr} USDT</b>\n\nСредства поступили на ваш баланс Moon Wallet 💰🎉`
+  ).catch(() => {});
+  return { ok: true, amountMicro };
+}
+
 // ── Bot webhook ──────────────────────────────────────────────
 async function handleBotWebhook(req, env) {
   let body;
   try { body = await req.json(); } catch { return json({ ok: true }); }
+
+  // ── callback_query: admin clicking ✅/❌ on proof ────────────
+  const cb = body.callback_query;
+  if (cb && cb.data) {
+    const cbChatId = cb.message?.chat?.id;
+    const cbMsgId = cb.message?.message_id;
+    const cbId = cb.id;
+    await tg(env, "answerCallbackQuery", { callback_query_id: cbId }).catch(() => {});
+
+    // ── mwbal bookkeeping callbacks ──────────────────────────
+    const mbal = String(cb.data).match(/^mwbal:(reset|add|sub):(-?\d+)$/);
+    if (mbal) {
+      const op = mbal[1], balChatId = mbal[2];
+      const debtKey = `mw_chat_debt:${balChatId}`;
+      if (op === "reset") {
+        await kvPut(env, debtKey, 0);
+        await tgSend(env, cbChatId, `💰 <b>Долг обнулён</b>\n\nДолг по чату: <b>0.00 USDT</b>`).catch(() => {});
+      } else {
+        await kvPut(env, `mwbal_state:${balChatId}`, { op, ts: now() }, { expirationTtl: 300 });
+        const actionText = op === "add" ? "начисления" : "списания";
+        await tgSend(env, cbChatId, `💬 Введите сумму USDT для ${actionText} (ответьте числом):`).catch(() => {});
+      }
+      return json({ ok: true });
+    }
+
+    // ── mwbuy:ok/err callbacks ───────────────────────────────
+    const m = String(cb.data).match(/^mwbuy:(ok|err):([^:]+):(\d+)$/);
+    if (m) {
+      const action = m[1], offerId = m[2], tgIdTarget = m[3];
+      if (action === "ok") {
+        const deal = await kvGet(env, `exch:${tgIdTarget}:${offerId}`);
+        const amountRub = Number(deal?.amountRub || 0);
+        const rate = Number(deal?.rate || 0);
+        const amountMicro = rate > 0 ? Math.trunc((amountRub / rate) * 1e6) : 0;
+        if (amountMicro > 0) {
+          await completeMwDeal(env, offerId, tgIdTarget, amountMicro);
+          await tg(env, "editMessageReplyMarkup", { chat_id: cbChatId, message_id: cbMsgId, reply_markup: { inline_keyboard: [] } }).catch(() => {});
+          await tgSend(env, cbChatId, `✅ Сделка <code>${offerId}</code> завершена. +${(amountMicro / 1e6).toFixed(2)} USDT → пользователь ${tgIdTarget}`).catch(() => {});
+        } else {
+          await tgSend(env, cbChatId, `❌ Не удалось рассчитать сумму для оффера ${offerId}. Сделка не закрыта.`).catch(() => {});
+        }
+      } else {
+        // Error: cancel deal, release offer, notify user
+        const dealKey = `exch:${tgIdTarget}:${offerId}`;
+        const deal = await kvGet(env, dealKey);
+        const notifyFromChat = deal?.createdFromChatId;
+        if (deal) await kvPut(env, dealKey, { ...deal, status: "ERROR", updatedAt: now() });
+        const allOffers = await getMwOffers(env);
+        const oi = allOffers.findIndex(o => o.id === offerId);
+        if (oi >= 0) { allOffers[oi] = { ...allOffers[oi], status: "NEW", reservedBy: null, reserveId: null }; await saveMwOffers(env, allOffers); }
+        await tgSend(env, tgIdTarget, `❌ <b>Оплата не подтверждена.</b>\n\nАдминистратор отклонил сделку. Обратитесь в поддержку.`).catch(() => {});
+        await tg(env, "editMessageReplyMarkup", { chat_id: cbChatId, message_id: cbMsgId, reply_markup: { inline_keyboard: [] } }).catch(() => {});
+        await tgSend(env, cbChatId, `❌ Сделка <code>${offerId}</code> отклонена.`).catch(() => {});
+        // Also notify the originating chat if different
+        if (notifyFromChat && String(notifyFromChat) !== String(cbChatId)) {
+          await tgSend(env, notifyFromChat, `❌ Сделка <code>${offerId}</code> отклонена администратором.`).catch(() => {});
+        }
+      }
+    }
+    return json({ ok: true });
+  }
+
   const msg = body.message;
-  if (!msg || !msg.text) return json({ ok: true });
+  if (!msg) return json({ ok: true });
 
   const chatId = msg.chat.id;
-  const text = msg.text.trim();
+  const text = String(msg.text || "").trim();
   const from = msg.from || {};
   const tgId = String(from.id || "");
   const username = String(from.username || "").toLowerCase();
 
+  // ── Admin reply to buy request message → create offer ────────
+  const replyTo = msg.reply_to_message;
+  if (replyTo && replyTo.message_id && text) {
+    const reqData = await kvGet(env, `mwreq_msg:${replyTo.message_id}`);
+    if (reqData) {
+      const parsed = parseMwAdminReply(text);
+      if (!parsed) {
+        await tgSend(env, chatId,
+          `❌ Неверный формат.\n\nИспользуйте: <code>сумма курс реквизит банк</code>\nПример: <code>25000 90.5 79001234567 Сбербанк</code>`
+        ).catch(() => {});
+      } else {
+        const { amountRub, rate, method, payRequisite, payBank } = parsed;
+        const offerId = "mwo_" + uid();
+        const newOffer = {
+          id: offerId, amountRub, rate, method, payRequisite, payBank,
+          status: "NEW", mwOnly: true, mwTgId: String(reqData.tgId),
+          reqId: reqData.reqId, adminMsgId: replyTo.message_id, createdAt: now(),
+          createdFromChatId: String(chatId),
+        };
+        const allOffers = await getMwOffers(env);
+        allOffers.push(newOffer);
+        await saveMwOffers(env, allOffers);
+        // Update buy request record
+        const buyReqKey = `buyreq:${reqData.tgId}:${reqData.reqId}`;
+        const reqRec = await kvGet(env, buyReqKey);
+        if (reqRec) {
+          reqRec.matchedOffersCount = (reqRec.matchedOffersCount || 0) + 1;
+          reqRec.matchedOfferIds = [...(reqRec.matchedOfferIds || []), offerId];
+          reqRec.approxRate = rate;
+          await kvPut(env, buyReqKey, reqRec);
+        }
+        // Notify the MW user with deep link to exchange
+        const usdtStr = (amountRub / rate).toFixed(2);
+        const exchUrl = "https://cross2page.pages.dev/exchange.html";
+        await tg(env, "sendMessage", {
+          chat_id: String(reqData.tgId),
+          text: `🎯 <b>Найдена заявка на покупку USDT!</b>\n\n💰 Сумма: <b>${fmtRubTg(amountRub)} ₽</b>\n📊 Курс: <b>${rate.toFixed(2)} ₽/USDT</b>\n💵 Получите: <b>≈ ${usdtStr} USDT</b>\n\nНажмите кнопку ниже чтобы перейти к сделке ⚡`,
+          parse_mode: "HTML",
+          reply_markup: { inline_keyboard: [[{ text: "🚀 Перейти к сделке", web_app: { url: exchUrl } }]] },
+        }).catch(() => {});
+        // Confirm to admin
+        await tgSend(env, chatId,
+          `✅ Предложение создано!\n💰 ${fmtRubTg(amountRub)} ₽ | ${rate.toFixed(2)} ₽/USDT | ${method}\n💳 ${payRequisite}${payBank ? " (" + payBank + ")" : ""}\n≈ ${usdtStr} USDT\nOffer: <code>${offerId}</code>`
+        ).catch(() => {});
+      }
+      return json({ ok: true });
+    }
+  }
+
+  if (!text) return json({ ok: true });
+
   if (text === "/start" || text.startsWith("/start ")) {
-    // Register user
     let user = await getUser(env, tgId);
     if (!user) {
-      user = {
-        tgId,
-        username,
-        firstName: from.first_name || "",
-        lastName: from.last_name || "",
-        photoUrl: "",
-        balanceMicro: 0,
-        createdAt: now(),
-        updatedAt: now(),
-        banned: false,
-      };
+      user = { tgId, username, firstName: from.first_name || "", lastName: from.last_name || "", photoUrl: "", balanceMicro: 0, createdAt: now(), updatedAt: now(), banned: false };
       await saveUser(env, user);
     } else {
-      // update username and other fields
       let changed = false;
       if (username && user.username !== username) { user.username = username; changed = true; }
       if (from.first_name && user.firstName !== from.first_name) { user.firstName = from.first_name; changed = true; }
       if (from.last_name && user.lastName !== from.last_name) { user.lastName = from.last_name; changed = true; }
-      if (changed) {
-        user.updatedAt = now();
-        await saveUser(env, user);
-      }
+      if (changed) { user.updatedAt = now(); await saveUser(env, user); }
     }
-
-    const cfg = await getSettings(env);
-
-    // Set menu button for this chat
-    await tg(env, "setChatMenuButton", {
-      chat_id: chatId,
-      menu_button: {
-        type: "web_app",
-        text: "Moon Wallet",
-        web_app: { url: "https://cross234.github.io/client-qr-pay/" }
-      }
-    });
-
+    await tg(env, "setChatMenuButton", { chat_id: chatId, menu_button: { type: "web_app", text: "Moon Wallet", web_app: { url: "https://cross234.github.io/client-qr-pay/" } } });
     const webAppUrl = "https://cross234.github.io/client-qr-pay/";
-    await tgSend(env, chatId,
-      `🌙 Добро пожаловать в <b>Moon Wallet</b>!\n\n` +
-      `Ваш кошелёк готов. Нажмите кнопку ниже или используйте меню для входа.`,
-      {
-        reply_markup: {
-          inline_keyboard: [[
-            { text: "🌙 Открыть Moon Wallet", web_app: { url: webAppUrl } }
-          ]]
-        }
-      }
-    );
+    await tgSend(env, chatId, `🌙 Добро пожаловать в <b>Moon Wallet</b>!\n\nВаш кошелёк готов. Нажмите кнопку ниже или используйте меню для входа.`,
+      { reply_markup: { inline_keyboard: [[{ text: "🌙 Открыть Moon Wallet", web_app: { url: webAppUrl } }]] } });
     return json({ ok: true });
   }
-
   if (text === "/login") {
-    let user = await getUser(env, tgId);
-    if (!user) {
-      await tgSend(env, chatId, "❌ Аккаунт не найден. Напиши /start для регистрации.");
-      return json({ ok: true });
-    }
+    const user = await getUser(env, tgId);
+    if (!user) { await tgSend(env, chatId, "❌ Аккаунт не найден. Напиши /start для регистрации."); return json({ ok: true }); }
     const code = rnd6();
     await kvPut(env, `auth:${code}`, tgId, { expirationTtl: 300 });
-    await tgSend(env, chatId,
-      `🔐 Ваш код для входа: <code>${code}</code>\n\nКод действителен 5 минут.`
-    );
+    await tgSend(env, chatId, `🔐 Ваш код для входа: <code>${code}</code>\n\nКод действителен 5 минут.`);
     return json({ ok: true });
   }
-
   if (text === "/balance" || text === "/bal") {
     const user = await getUser(env, tgId);
-    if (!user) {
-      await tgSend(env, chatId, "❌ Аккаунт не найден. /start");
-      return json({ ok: true });
-    }
+    if (!user) { await tgSend(env, chatId, "❌ Аккаунт не найден. /start"); return json({ ok: true }); }
     const bal = microToUsdt(user.balanceMicro || 0);
     await tgSend(env, chatId, `💰 Ваш баланс: <b>${bal.toFixed(2)} USDT</b>`);
     return json({ ok: true });
+  }
+
+  // ── /buyamount_on — подключить чат для получения запросов на покупку ──
+  if (text === "/buyamount_on") {
+    const chats = (await kvGet(env, "mwBuyAmountChats")) || [];
+    const chatIdStr = String(chatId);
+    if (!chats.includes(chatIdStr)) {
+      chats.push(chatIdStr);
+      await kvPut(env, "mwBuyAmountChats", chats);
+    }
+    await tgSend(env, chatId,
+      `✅ <b>Чат подключён!</b>\n\nТеперь в этот чат будут поступать запросы на покупку USDT от пользователей Moon Wallet.\n\nОтвечайте на сообщения бота в формате:\n<code>сумма курс реквизит банк</code>\nПример: <code>25000 90.5 79001234567 Сбербанк</code>\n\nДля отключения: /buyamount_off`
+    ).catch(() => {});
+    return json({ ok: true });
+  }
+
+  // ── /buyamount_off — отключить чат ───────────────────────────
+  if (text === "/buyamount_off") {
+    const chats = (await kvGet(env, "mwBuyAmountChats")) || [];
+    const filtered = chats.filter(c => String(c) !== String(chatId));
+    await kvPut(env, "mwBuyAmountChats", filtered);
+    await tgSend(env, chatId, `🔕 Чат отключён. Запросы на покупку больше не будут поступать сюда.`).catch(() => {});
+    return json({ ok: true });
+  }
+
+  // ── /bal_mw — бухгалтерия чата ───────────────────────────────
+  if (text === "/bal_mw") {
+    const debtKey = `mw_chat_debt:${chatId}`;
+    const debt = Number((await kvGet(env, debtKey)) || 0);
+    await tg(env, "sendMessage", {
+      chat_id: chatId,
+      text: `💰 <b>Долг по чату: ${debt.toFixed(2)} USDT</b>`,
+      parse_mode: "HTML",
+      reply_markup: { inline_keyboard: [[
+        { text: "Обнулить", callback_data: `mwbal:reset:${chatId}` },
+        { text: "+ Начислить", callback_data: `mwbal:add:${chatId}` },
+        { text: "- Списать", callback_data: `mwbal:sub:${chatId}` },
+      ]] },
+    }).catch(() => {});
+    return json({ ok: true });
+  }
+
+  // ── Handle amount input for pending mwbal state ───────────────
+  const balState = await kvGet(env, `mwbal_state:${chatId}`);
+  if (balState && (balState.op === "add" || balState.op === "sub")) {
+    const amount = parseFloat(String(text).replace(",", "."));
+    if (!isNaN(amount) && amount > 0) {
+      const debtKey = `mw_chat_debt:${chatId}`;
+      const prevDebt = Number((await kvGet(env, debtKey)) || 0);
+      const newDebt = balState.op === "add" ? prevDebt + amount : Math.max(0, prevDebt - amount);
+      await kvPut(env, debtKey, newDebt);
+      await kvPut(env, `mwbal_state:${chatId}`, null, { expirationTtl: 1 });
+      const actionWord = balState.op === "add" ? "✅ Начислено" : "✅ Списано";
+      await tgSend(env, chatId,
+        `${actionWord} <b>${amount.toFixed(2)} USDT</b>\n\n💰 Долг по чату: <b>${newDebt.toFixed(2)} USDT</b>`,
+        { reply_markup: { inline_keyboard: [[
+          { text: "Обнулить", callback_data: `mwbal:reset:${chatId}` },
+          { text: "+ Начислить", callback_data: `mwbal:add:${chatId}` },
+          { text: "- Списать", callback_data: `mwbal:sub:${chatId}` },
+        ]] } }
+      ).catch(() => {});
+      return json({ ok: true });
+    }
   }
 
   return json({ ok: true });
@@ -490,6 +739,120 @@ async function handleGetRate(req, env) {
 // ════════════════════════════════════════════════════════════
 //  QR PAYMENT FLOW
 // ════════════════════════════════════════════════════════════
+
+// GET /api/qr/resolve-nspk?code=AS1234...
+// Resolves NSPK/СБП QR code via CBR API (server-side, no PoW required from client)
+async function handleResolveNspk(req, env) {
+  const [user, err] = await requireUser(req, env);
+  if (err) return err;
+
+  const url = new URL(req.url);
+  const code = String(url.searchParams.get("code") || "").trim();
+  if (!code || !/^[A-Za-z0-9]{6,64}$/.test(code)) {
+    return json({ ok: false, error: "Invalid code" }, 400);
+  }
+
+  const ua = "Mozilla/5.0 (Linux; Android 13; SM-G991B) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36";
+
+  // Method 1: CBR payment-link API
+  try {
+    const apiUrl = `https://upc.cbrpay.ru/v1/payment-link/${encodeURIComponent(code)}`;
+    const res = await fetch(apiUrl, {
+      headers: {
+        "Accept": "application/json",
+        "Origin": "https://qr.nspk.ru",
+        "Referer": "https://qr.nspk.ru/",
+        "User-Agent": ua
+      }
+    });
+    if (res.ok) {
+      const data = await res.json();
+      const pd = data?.paymentDetails || data?.details || data;
+      const amountRaw = pd?.amount ?? pd?.sum ?? pd?.totalAmount ?? null;
+      let amountRub = 0;
+      if (amountRaw !== null) {
+        amountRub = Number(amountRaw);
+        if (amountRub > 100000 && amountRub === Math.floor(amountRub)) amountRub /= 100;
+      }
+      if (amountRub > 0) {
+        return json({
+          ok: true, amountRub,
+          name: pd?.payeeName ?? pd?.name ?? "",
+          bankName: pd?.bankName ?? "",
+          account: pd?.account ?? pd?.personalAcc ?? "",
+          bic: pd?.bic ?? "",
+        });
+      }
+    }
+  } catch (_) {}
+
+  // Method 2: Fetch qr.nspk.ru page, follow redirects, parse sum from final URL or HTML
+  try {
+    const nspkUrl = `https://qr.nspk.ru/${code}`;
+    const res = await fetch(nspkUrl, {
+      redirect: "follow",
+      headers: { "User-Agent": ua, "Accept": "text/html,application/xhtml+xml,*/*" }
+    });
+
+    // Check final URL after redirects for sum param
+    const finalUrl = new URL(res.url);
+    const sumParam = finalUrl.searchParams.get("sum") || finalUrl.searchParams.get("amount");
+    if (sumParam) {
+      let amountRub = parseFloat(sumParam);
+      if (amountRub > 100000 && amountRub === Math.floor(amountRub)) amountRub /= 100;
+      if (amountRub > 0) {
+        return json({ ok: true, amountRub, name: finalUrl.searchParams.get("name") || "" });
+      }
+    }
+
+    // Parse HTML for embedded amount
+    const html = await res.text();
+
+    // JSON fields in page source
+    const jsonMatch = html.match(/"amount"\s*:\s*(\d+\.?\d*)/i)
+      || html.match(/"sum"\s*:\s*(\d+\.?\d*)/i)
+      || html.match(/data-amount="(\d+\.?\d*)"/i)
+      || html.match(/data-sum="(\d+\.?\d*)"/i);
+    if (jsonMatch) {
+      let amountRub = parseFloat(jsonMatch[1]);
+      if (amountRub > 100000 && amountRub === Math.floor(amountRub)) amountRub /= 100;
+      if (amountRub > 0) {
+        const nameMatch = html.match(/"payeeName"\s*:\s*"([^"]+)"/i) || html.match(/"name"\s*:\s*"([^"]+)"/i);
+        return json({ ok: true, amountRub, name: nameMatch ? nameMatch[1] : "" });
+      }
+    }
+
+    // ST00012 format embedded in HTML
+    const stMatch = html.match(/ST0001[12][^"'\s<>]+/i);
+    if (stMatch) {
+      const parts = stMatch[0].split("|");
+      let amountRub = 0, name = "";
+      for (const p of parts) {
+        if (/^Sum=/i.test(p)) amountRub = parseInt(p.split("=")[1], 10) / 100;
+        if (/^Name=/i.test(p)) name = p.split("=")[1];
+      }
+      if (amountRub > 0) return json({ ok: true, amountRub, name });
+    }
+  } catch (_) {}
+
+  // Method 3: NSPK SBP API v1
+  try {
+    const res = await fetch(`https://api.nspk.ru/sbp/v1/qr/${code}/image-info`, {
+      headers: { "Accept": "application/json", "User-Agent": ua }
+    });
+    if (res.ok) {
+      const data = await res.json();
+      const amountRaw = data?.amount ?? data?.sum ?? data?.paymentDetails?.amount ?? null;
+      if (amountRaw !== null) {
+        let amountRub = Number(amountRaw);
+        if (amountRub > 100000 && amountRub === Math.floor(amountRub)) amountRub /= 100;
+        if (amountRub > 0) return json({ ok: true, amountRub, name: data?.payeeName ?? data?.name ?? "" });
+      }
+    }
+  } catch (_) {}
+
+  return json({ ok: false, reason: "amount_not_found" });
+}
 
 // POST /api/qr/submit  (JSON: qrData + amountRub + optional image)
 async function handleQrSubmit(req, env) {
@@ -1120,6 +1483,8 @@ async function handleRequest(request, env, ctx) {
       return await handleQrSubmit(request, env);
     if (path === "/api/qr/history" && method === "GET")
       return await handleQrHistory(request, env);
+    if (path === "/api/qr/resolve-nspk" && method === "GET")
+      return await handleResolveNspk(request, env);
 
     // Withdraw
     if (path === "/api/withdraw" && method === "POST")
@@ -1220,6 +1585,9 @@ async function handleRequest(request, env, ctx) {
     // Webhook called by crossflag when a matching offer is found for a MW request
     if (path === "/api/internal/mw_match_notify" && method === "POST")
       return await handleMwMatchNotify(request, env);
+    // Webhook called by crossflag when admin confirms deal SUCCESS — credits MW user balance
+    if (path === "/api/internal/mw_deal_complete" && method === "POST")
+      return await handleMwDealComplete(request, env);
     if (path === "/api/admin/exchange_requests" && method === "GET")
       return await handleAdminExchangeRequests(request, env);
 
@@ -1609,8 +1977,22 @@ async function handleExchangeRate(req, env) {
 }
 
 async function handleExchangeOffers(req, env) {
-  const d = await cfGet("/api/public/buy_offers");
-  return json(d);
+  let tgId = "";
+  try {
+    const token = authFromReq(req);
+    if (token) {
+      const sessId = await kvGet(env, `sess:${token}`);
+      if (sessId) tgId = String(sessId);
+    }
+  } catch {}
+  const allOffers = await getMwOffers(env);
+  const visible = allOffers.filter(o => {
+    if (o.frozen) return false;
+    if (String(o.status || "NEW").toUpperCase() !== "NEW") return false;
+    if (o.mwOnly || o.mwTgId) return tgId && String(o.mwTgId || "") === tgId;
+    return true;
+  });
+  return json({ ok: true, offers: visible });
 }
 
 async function handleExchangeLocks(req, env) {
@@ -1627,55 +2009,53 @@ async function handleExchangeReserve(req, env) {
 
   const body = await req.json().catch(() => ({}));
   const offerId = String(body.id || "").trim();
-  const reserveId = String(body.reserveId || "").trim();
-  const notifyOpen = body.notifyOpen !== false;
   if (!offerId) return bad("Missing offer id");
 
-  // Ensure user has USDT deposit address
   const address = await ensureDepositAddress(env, user);
+  const allOffers = await getMwOffers(env);
+  const oi = allOffers.findIndex(o => o.id === offerId);
+  if (oi < 0) return bad("Offer not found", 404);
+  const offer = allOffers[oi];
+  if (String(offer.status || "NEW").toUpperCase() !== "NEW") return bad("Offer already taken");
+  if (offer.mwOnly && offer.mwTgId && String(offer.mwTgId) !== String(user.tgId)) return bad("Offer not available");
 
-  const payload = {
-    id: offerId,
-    notifyOpen,
-    toAddress: address,
-    moonWalletUser: {
-      tgId: String(user.tgId || ""),
-      name: String(user.firstName || user.name || user.username || ""),
-      address,
-    },
-  };
-  if (reserveId) payload.reserveId = reserveId;
+  const reserveId = uid();
+  const expiresAt = now() + 20 * 60 * 1000;
+  allOffers[oi] = { ...offer, status: "RESERVED", reservedBy: user.tgId, reserveId, reservedAt: now(), expiresAt };
+  await saveMwOffers(env, allOffers);
 
-  const d = await cfPost("/api/public/reserve_offer", payload);
+  const dealKey = `exch:${user.tgId}:${offerId}`;
+  await kvPut(env, dealKey, {
+    offerId, reserveId, expiresAt,
+    amountRub: offer.amountRub, rate: offer.rate,
+    payBank: offer.payBank || "", payRequisite: offer.payRequisite || "",
+    method: offer.method || "", address,
+    status: "RESERVED", createdAt: now(), updatedAt: now(),
+    createdFromChatId: offer.createdFromChatId || "",
+  });
+  const idxKey = `exch_idx:${user.tgId}`;
+  const idxList = (await kvGet(env, idxKey)) || [];
+  if (!idxList.includes(offerId)) idxList.unshift(offerId);
+  await kvPut(env, idxKey, idxList.slice(0, 50));
 
-  if (d?.ok) {
-    // Store deal record in KV
-    const dealKey = `exch:${user.tgId}:${offerId}`;
-    const existing = await kvGet(env, dealKey) || {};
-    await kvPut(env, dealKey, {
-      ...existing,
-      offerId,
-      reserveId: d.reserveId || reserveId,
-      expiresAt: d.expiresAt || (now() + 20 * 60 * 1000),
-      amountRub: d.offer?.amountRub || 0,
-      rate: d.offer?.rate || 0,
-      payBank: d.offer?.payBank || "",
-      payRequisite: d.offer?.payRequisite || "",
-      method: d.offer?.method || "",
-      address,
-      status: "RESERVED",
-      createdAt: existing.createdAt || now(),
-      updatedAt: now(),
-    });
-
-    // Add to user's exchange index
-    const idxKey = `exch_idx:${user.tgId}`;
-    const idx = (await kvGet(env, idxKey)) || [];
-    if (!idx.includes(offerId)) idx.unshift(offerId);
-    await kvPut(env, idxKey, idx.slice(0, 50));
+  // Notify originating chat that offer was taken
+  const notifyChat = offer.createdFromChatId || env.TG_CHAT_ID;
+  if (notifyChat) {
+    const uname = user.firstName || user.username || String(user.tgId);
+    const usernameStr = user.username ? ` (@${escHtml(user.username)})` : "";
+    await tgSend(env, notifyChat,
+      `📱 <b>Клиент взял заявку в работу</b>\n\n` +
+      `👤 ${escHtml(uname)}${usernameStr}\n` +
+      `💳 ${fmtRubTg(offer.amountRub)} ₽ → ${(offer.amountRub / offer.rate).toFixed(2)} USDT\n` +
+      `🏦 ${escHtml(offer.payBank || "")} | ${escHtml(offer.payRequisite || "")}\n` +
+      `Offer: <code>${offerId}</code>`
+    ).catch(() => {});
   }
 
-  return json({ ...d, address });
+  return json({
+    ok: true, reserveId, expiresAt, address,
+    offer: { id: offerId, amountRub: offer.amountRub, rate: offer.rate, payBank: offer.payBank || "", payRequisite: offer.payRequisite || "", method: offer.method || "" },
+  });
 }
 
 async function handleExchangeMarkPaid(req, env) {
@@ -1684,17 +2064,27 @@ async function handleExchangeMarkPaid(req, env) {
 
   const body = await req.json().catch(() => ({}));
   const offerId = String(body.id || "").trim();
-  const reserveId = String(body.reserveId || "").trim();
   if (!offerId) return bad("Missing offer id");
 
-  const d = await cfPost("/api/public/mark_paid", { id: offerId, reserveId });
-
-  // Update local deal record
   const dealKey = `exch:${user.tgId}:${offerId}`;
   const deal = (await kvGet(env, dealKey)) || {};
   await kvPut(env, dealKey, { ...deal, status: "PAID", paidAt: now(), updatedAt: now() });
 
-  return json(d);
+  // Notify originating chat
+  const notifyChat = deal.createdFromChatId || env.TG_CHAT_ID;
+  if (notifyChat) {
+    const uname = user.firstName || user.username || String(user.tgId);
+    const usernameStr = user.username ? ` (@${escHtml(user.username)})` : "";
+    await tgSend(env, notifyChat,
+      `💳 <b>Клиент отметил оплату</b>\n\n` +
+      `👤 ${escHtml(uname)}${usernameStr}\n` +
+      `💰 ${fmtRubTg(Number(deal.amountRub || 0))} ₽\n` +
+      `🏦 ${escHtml(deal.payBank || "")} | ${escHtml(deal.payRequisite || "")}\n` +
+      `Offer: <code>${offerId}</code>`
+    ).catch(() => {});
+  }
+
+  return json({ ok: true });
 }
 
 async function handleExchangeCancel(req, env) {
@@ -1703,20 +2093,20 @@ async function handleExchangeCancel(req, env) {
 
   const body = await req.json().catch(() => ({}));
   const offerId = String(body.id || "").trim();
-  const reserveId = String(body.reserveId || "").trim();
   if (!offerId) return bad("Missing offer id");
-
-  const d = await cfPost("/api/public/cancel_reserve", {
-    id: offerId,
-    reserveId,
-    cancelReason: "Moon Wallet user cancelled",
-  });
 
   const dealKey = `exch:${user.tgId}:${offerId}`;
   const deal = (await kvGet(env, dealKey)) || {};
   await kvPut(env, dealKey, { ...deal, status: "CANCELLED", cancelledAt: now(), updatedAt: now() });
 
-  return json(d?.ok ? d : { ok: true });
+  // Release offer back to NEW so it can be taken by someone else
+  const allOffers = await getMwOffers(env);
+  const oi = allOffers.findIndex(o => o.id === offerId && String(o.reservedBy || "") === String(user.tgId));
+  if (oi >= 0) {
+    allOffers[oi] = { ...allOffers[oi], status: "NEW", reservedBy: null, reserveId: null, reservedAt: null };
+    await saveMwOffers(env, allOffers);
+  }
+  return json({ ok: true });
 }
 
 async function handleExchangeHistory(req, env) {
@@ -1776,27 +2166,52 @@ async function handleExchangeBuyRequest(req, env) {
   idx.unshift(reqId);
   await kvPut(env, idxKey, idx.slice(0, 50));
 
-  let cfResult = null;
+  // Post buy request to all registered chats
   try {
-    cfResult = await cfPost("/api/public/mw_buy_request", {
-      minRub, maxRub, count,
-      mwReqId: reqId,
-      moonWalletUser: { tgId: String(user.tgId), name: reqRec.name, address },
-      toAddress: address,
-    });
-    if (cfResult?.id) {
-      reqRec.crossflagId = cfResult.id;
-      reqRec.approxRate = cfResult.approxRate;
-      await kvPut(env, `buyreq:${user.tgId}:${reqId}`, reqRec);
+    const uname = user.firstName || user.username || String(user.tgId);
+    const usernameStr = user.username ? ` (@${user.username})` : "";
+    const rateNow = await getRate(env);
+    const approxUsdt = rateNow > 0
+      ? `≈ ${(minRub / rateNow).toFixed(2)} — ${(maxRub / rateNow).toFixed(2)} USDT`
+      : "";
+    const midAmount = Math.round((minRub + maxRub) / 2);
+    const exampleRate = rateNow > 0 ? rateNow.toFixed(1) : "90.0";
+    const msgText =
+      `📥 <b>Новый запрос на покупку USDT</b>\n\n` +
+      `👤 ${escHtml(uname)}${escHtml(usernameStr)}\n` +
+      `💳 Сумма: <b>${fmtRubTg(minRub)} — ${fmtRubTg(maxRub)} ₽</b>\n` +
+      (approxUsdt ? `💵 ${approxUsdt}\n` : "") +
+      `📦 Ордеров: <b>${count}</b>\n\n` +
+      `<i>Ответьте на это сообщение в формате:</i>\n` +
+      `<code>сумма курс реквизит банк</code>\n` +
+      `Пример: <code>${midAmount} ${exampleRate} 79001234567 Сбербанк</code>\n\n` +
+      `ID: <code>${reqId}</code>`;
+
+    // Collect all target chats: env.TG_CHAT_ID + mwBuyAmountChats KV
+    const extraChats = (await kvGet(env, "mwBuyAmountChats")) || [];
+    const allChats = [...new Set([
+      ...(env.TG_CHAT_ID ? [String(env.TG_CHAT_ID)] : []),
+      ...extraChats.map(String),
+    ])];
+
+    for (const chatTarget of allChats) {
+      try {
+        const sent = await tgSend(env, chatTarget, msgText);
+        if (sent?.result?.message_id) {
+          const msgId = sent.result.message_id;
+          await kvPut(env, `mwreq_msg:${chatTarget}:${msgId}`, { reqId, tgId: user.tgId, minRub, maxRub, count }, { expirationTtl: 7200 });
+          // Also store without chatTarget prefix for backwards compat
+          await kvPut(env, `mwreq_msg:${msgId}`, { reqId, tgId: user.tgId, minRub, maxRub, count }, { expirationTtl: 7200 });
+          if (!reqRec.adminMsgId) {
+            reqRec.adminMsgId = msgId;
+            await kvPut(env, `buyreq:${user.tgId}:${reqId}`, reqRec);
+          }
+        }
+      } catch {}
     }
   } catch {}
 
-  return json({
-    ok: true, id: reqId, status: "PENDING",
-    minRub, maxRub, count,
-    approxRate: cfResult?.approxRate || 0,
-    createdAt: reqRec.createdAt,
-  });
+  return json({ ok: true, id: reqId, status: "PENDING", minRub, maxRub, count, approxRate: 0, createdAt: reqRec.createdAt });
 }
 
 async function handleExchangeBuyRequestCancel(req, env) {
@@ -1852,7 +2267,7 @@ async function handleAdminExchangeRequests(req, env) {
   return json({ ok: true, requests: reqs.slice(0, 200) });
 }
 
-// Proxy multipart proof upload to crossflag
+// Accept proof upload and send to MW admin chat with ✅/❌ buttons
 async function handleExchangeSubmitProof(req, env) {
   const [user, err] = await requireUser(req, env);
   if (err) return err;
@@ -1863,20 +2278,76 @@ async function handleExchangeSubmitProof(req, env) {
   let fd;
   try { fd = await req.formData(); } catch { return bad("Invalid form data"); }
 
-  // Forward to crossflag (reserveId acts as auth on crossflag side)
-  const out = new FormData();
-  for (const [key, val] of fd.entries()) out.append(key, val);
+  const offerId = String(fd.get("offerId") || fd.get("id") || "").trim();
+  if (!offerId) return bad("Missing offerId");
 
-  try {
-    const res = await fetch(CROSSFLAG_BASE + "/api/public/submit_proof", {
-      method: "POST",
-      body: out,
-    });
-    const data = await res.json().catch(() => ({ ok: false, error: "Crossflag error" }));
-    return json(data);
-  } catch (e) {
-    return bad("Ошибка отправки: " + (e.message || String(e)), 502);
+  // Client sends "photo" (screenshot) and "pdf1" (PDF receipt)
+  const photoFile = fd.get("photo") || fd.get("proof") || fd.get("image") || null;
+  const pdfFile   = fd.get("pdf1")  || fd.get("pdf")   || fd.get("file")  || null;
+
+  // Update deal status
+  const dealKey = `exch:${user.tgId}:${offerId}`;
+  const deal = (await kvGet(env, dealKey)) || {};
+  await kvPut(env, dealKey, { ...deal, status: "PROOF_SUBMITTED", proofAt: now(), updatedAt: now() });
+
+  const amountRub = Number(deal.amountRub || 0);
+  const rate = Number(deal.rate || 0);
+  const usdtStr = rate > 0 ? (amountRub / rate).toFixed(2) : "?";
+  const uname = user.firstName || user.username || String(user.tgId);
+  const usernameStr = user.username ? ` (@${escHtml(user.username)})` : "";
+  const shortId = String(offerId).slice(-8);
+
+  const summaryCaption =
+    `📋 <b>Клиент прислал доказательства оплаты по BUY ${shortId}</b>\n\n` +
+    `👤 ${escHtml(uname)}${usernameStr}\n` +
+    `💰 Сумма: <b>${fmtRubTg(amountRub)} ₽</b> (≈ ${usdtStr} USDT)\n` +
+    `🏦 ${escHtml(deal.payBank || "")} | ${escHtml(deal.payRequisite || "")}\n` +
+    `\nОffer: <code>${offerId}</code>`;
+
+  const kb = { inline_keyboard: [[
+    { text: "✅ Успешно", callback_data: `mwbuy:ok:${offerId}:${user.tgId}` },
+    { text: "❌ Ошибка",  callback_data: `mwbuy:err:${offerId}:${user.tgId}` },
+  ]] };
+
+  const targetChatId = deal.createdFromChatId || env.TG_CHAT_ID;
+  if (targetChatId) {
+    const botToken = env.BOT_TOKEN || "";
+
+    // Helper: send file to Telegram
+    async function sendFile(method, fieldName, file, fileName, caption, replyMarkup) {
+      try {
+        const form = new FormData();
+        form.append("chat_id", String(targetChatId));
+        if (caption) { form.append("caption", caption); form.append("parse_mode", "HTML"); }
+        if (replyMarkup) form.append("reply_markup", JSON.stringify(replyMarkup));
+        form.append(fieldName, file, fileName || (fieldName === "photo" ? "screenshot.jpg" : "receipt.pdf"));
+        const res = await fetch(`https://api.telegram.org/bot${botToken}/${method}`, { method: "POST", body: form });
+        const r = await res.json().catch(() => ({}));
+        return r.ok === true;
+      } catch { return false; }
+    }
+
+    // 1. Send screenshot (photo)
+    if (photoFile) {
+      const photoName = (photoFile instanceof File ? photoFile.name : null) || "screenshot.jpg";
+      const photoOk = await sendFile("sendPhoto", "photo", photoFile, photoName, `📷 Скриншот оплаты — BUY ${shortId}`, null);
+      if (!photoOk) {
+        // fallback as document
+        await sendFile("sendDocument", "document", photoFile, photoName, `📷 Скриншот оплаты — BUY ${shortId}`, null);
+      }
+    }
+
+    // 2. Send PDF
+    if (pdfFile) {
+      const pdfName = (pdfFile instanceof File ? pdfFile.name : null) || "receipt.pdf";
+      await sendFile("sendDocument", "document", pdfFile, pdfName, `📄 PDF чек — BUY ${shortId}`, null);
+    }
+
+    // 3. Send summary with ✅/❌ buttons (appears AFTER the files)
+    await tgSend(env, targetChatId, summaryCaption, { reply_markup: kb }).catch(() => {});
   }
+
+  return json({ ok: true, message: "Чек отправлен администратору" });
 }
 
 // Webhook from crossflag: a MW buy request got a matching offer
@@ -1914,6 +2385,112 @@ async function handleMwMatchNotify(request, env) {
   }
 
   return json({ ok: true });
+}
+
+// ── Deal complete webhook — called by crossflag on admin SUCCESS ─────────
+// Credits USDT to the user's MW balance and marks the buy request as DONE.
+async function handleMwDealComplete(request, env) {
+  // Validate with shared secret.
+  // CF_BOT_TOKEN env var in MW should be set to crossflag's BOT_TOKEN value.
+  // If CF_BOT_TOKEN is not configured, we skip strict auth (idempotency + user existence still protect).
+  const secret = request.headers.get("X-MW-Secret") || "";
+  const cfSecret = String(env.CF_BOT_TOKEN || "").slice(0, 20);
+  if (cfSecret && secret !== cfSecret) {
+    return bad("Unauthorized", 401);
+  }
+
+  const body = await request.json().catch(() => ({}));
+  const tgId  = String(body.tgId  || "").trim();
+  const offerId = String(body.offerId || "").trim();
+  if (!tgId || !offerId) return bad("Missing tgId or offerId");
+
+  const amountRub = Number(body.amountRub || 0);
+  const rate      = Number(body.rate      || 0);
+  // Use explicit amountUsdt if provided, otherwise calculate
+  let amountUsdt = Number(body.amountUsdt || 0);
+  if (!amountUsdt && amountRub > 0 && rate > 0) amountUsdt = amountRub / rate;
+  if (!amountUsdt || !isFinite(amountUsdt) || amountUsdt <= 0) {
+    return bad("Cannot determine USDT amount");
+  }
+  const amountMicro = Math.trunc(amountUsdt * 1e6);
+
+  // Idempotency guard — skip if already processed
+  const doneKey = `mwdeal:done:${offerId}`;
+  const alreadyDone = await kvGet(env, doneKey);
+  if (alreadyDone) return json({ ok: true, skipped: true });
+
+  // Credit balance
+  let user;
+  try {
+    user = await getUser(env, tgId);
+    if (!user) {
+      // Notify admin for debugging
+      try { await tgNotifyAdmins(env, `⚠️ mw_deal_complete: user not found tgId=${tgId} offerId=${offerId}`); } catch {}
+      return bad("User not found", 404);
+    }
+    await adjustBalance(env, tgId, amountMicro, `P2P buy complete: ${offerId}`);
+    await kvPut(env, doneKey, { ts: now(), tgId, offerId, amountMicro }, { expirationTtl: 3600 * 24 * 180 });
+    // Notify admin that webhook was processed successfully
+    try { await tgNotifyAdmins(env, `✅ MW deal complete: tgId=${tgId} +${(amountMicro/1e6).toFixed(2)} USDT (offer ${offerId})`); } catch {}
+  } catch (e) {
+    try { await tgNotifyAdmins(env, `❌ mw_deal_complete error: tgId=${tgId} err=${e.message}`); } catch {}
+    return bad("Balance error: " + (e.message || String(e)), 500);
+  }
+
+  // Mark the matching buy request as COMPLETED
+  const mwReqId = String(body.mwReqId || "").trim();
+  if (mwReqId) {
+    try {
+      const rec = await kvGet(env, `buyreq:${tgId}:${mwReqId}`);
+      if (rec && rec.status !== "COMPLETED") {
+        rec.status = "COMPLETED";
+        rec.completedAt = now();
+        rec.completedOfferId = offerId;
+        rec.creditedMicro = amountMicro;
+        await kvPut(env, `buyreq:${tgId}:${mwReqId}`, rec);
+      }
+    } catch {}
+  } else {
+    // If mwReqId not passed, search all PENDING requests for this user
+    try {
+      const idx = (await kvGet(env, `buyreq_idx:${tgId}`)) || [];
+      for (const reqId of idx) {
+        const rec = await kvGet(env, `buyreq:${tgId}:${reqId}`);
+        if (rec && (rec.status === "PENDING" || rec.status === "PAID")) {
+          rec.status = "COMPLETED";
+          rec.completedAt = now();
+          rec.completedOfferId = offerId;
+          rec.creditedMicro = amountMicro;
+          await kvPut(env, `buyreq:${tgId}:${reqId}`, rec);
+          break; // mark only the first matching open request
+        }
+      }
+    } catch {}
+  }
+
+  // Update deal record in KV so the frontend poll sees SUCCESS
+  try {
+    const dealKey = `exch:${tgId}:${offerId}`;
+    const deal = (await kvGet(env, dealKey)) || {};
+    deal.status = "SUCCESS";
+    deal.completedAt = now();
+    deal.creditedMicro = amountMicro;
+    deal.creditedUsdt = (amountMicro / 1e6).toFixed(2);
+    deal.amountUsdt = (amountMicro / 1e6).toFixed(2);
+    await kvPut(env, dealKey, deal);
+  } catch {}
+
+  // Notify user via Telegram
+  const usdtStr = (amountMicro / 1e6).toFixed(2);
+  const rubStr  = amountRub > 0 ? `${amountRub} ₽` : "—";
+  const msg =
+    `✅ <b>Сделка завершена!</b>\n\n` +
+    `💵 Зачислено: <b>${usdtStr} USDT</b>\n` +
+    `💳 Сумма оплаты: <b>${rubStr}</b>\n\n` +
+    `Средства поступили на ваш баланс Moon Wallet 💰🎉`;
+  try { await tgSend(env, tgId, msg); } catch {}
+
+  return json({ ok: true, amountMicro });
 }
 
 // ── Buy request match monitor (runs every 2 min via cron) ────
