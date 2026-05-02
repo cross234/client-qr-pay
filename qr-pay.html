@@ -438,24 +438,35 @@ function parseQrData(raw) {
   } catch(_){}
 
   if (isUrl) {
-    // Try to pull sum from many possible query param names
-    const sumKeys = ['sum','Sum','SUM','amount','Amount','AMOUNT',
-                     'value','Value','total','Total','pay','Pay',
-                     'price','Price','money','Money'];
-    let sumParam = null;
-    for (const k of sumKeys) {
-      const v = urlObj.searchParams.get(k);
-      if (v != null && v !== '') { sumParam = v; break; }
-    }
-    if (sumParam) {
-      const n = parseFloat(String(sumParam).replace(',', '.'));
+    // Check if this is an NSPK/SBP URL where sum is ALWAYS in kopecks
+    const host = (urlObj.hostname || '').toLowerCase();
+    const isNspkHost = host === 'qr.nspk.ru' || host === 'sub.nspk.ru' || host === 'qr.sbp.ru';
+
+    // Try 'sum' param first (NSPK standard, in kopecks)
+    const sumRaw = urlObj.searchParams.get('sum') || urlObj.searchParams.get('Sum') || urlObj.searchParams.get('SUM');
+    if (sumRaw) {
+      const n = parseFloat(String(sumRaw).replace(',', '.'));
       if (!isNaN(n) && n > 0) {
-        // Heuristic: large integers without decimal → kopecks
-        if (Number.isInteger(n) && n >= 1000 && /^\d+$/.test(String(sumParam))) {
+        if (isNspkHost) {
+          // NSPK: sum is ALWAYS in kopecks
+          result.sum = n / 100;
+        } else if (Number.isInteger(n) && n >= 1000 && /^\d+$/.test(String(sumRaw))) {
           result.sum = n / 100;
           if (result.sum < 1) result.sum = n;
         } else {
           result.sum = n;
+        }
+      }
+    }
+
+    // Try other param names (amount, price, etc.) — usually in rubles
+    if (!result.sum) {
+      const otherKeys = ['amount','Amount','AMOUNT','value','Value','total','Total','pay','Pay','price','Price','money','Money'];
+      for (const k of otherKeys) {
+        const v = urlObj.searchParams.get(k);
+        if (v != null && v !== '') {
+          const n = parseFloat(String(v).replace(',', '.'));
+          if (!isNaN(n) && n > 0) { result.sum = n; break; }
         }
       }
     }
