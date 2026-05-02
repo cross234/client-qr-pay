@@ -94,6 +94,22 @@ body {
 }
 .pay-confirm.show { display: block; }
 
+/* Resolving spinner */
+.resolving-card {
+  display: none; text-align: center;
+  background: var(--card); border: 1px solid var(--border);
+  border-radius: 20px; padding: 40px 20px;
+  box-shadow: var(--shadow);
+}
+.resolving-card.show { display: block; }
+.resolving-spinner {
+  width: 48px; height: 48px; margin: 0 auto 16px;
+  border: 4px solid var(--border); border-top-color: var(--accent);
+  border-radius: 50%; animation: spin .8s linear infinite;
+}
+.resolving-card .title { font-size: 17px; font-weight: 700; margin-bottom: 6px; }
+.resolving-card .desc { font-size: 14px; color: var(--muted); }
+
 .amount-big {
   text-align: center; margin: 20px 0;
   padding: 20px; background: var(--card2); border: 1px solid var(--border);
@@ -242,6 +258,13 @@ body {
     </button>
 
     <input type="file" id="fileInput" accept="image/*" capture="environment" style="display:none">
+  </div>
+
+  <!-- Resolving state -->
+  <div class="resolving-card" id="resolvingCard">
+    <div class="resolving-spinner"></div>
+    <div class="title">Определяем сумму...</div>
+    <div class="desc">Запрашиваем данные платежа</div>
   </div>
 
   <!-- Step 2: Payment confirmation -->
@@ -508,8 +531,24 @@ function parseQrData(raw) {
   return result;
 }
 
+// ── Resolve amount from server ──
+async function resolveAmountFromServer(qrData) {
+  try {
+    const res = await fetch(BASE + '/api/qr/resolve', {
+      method: 'POST',
+      headers: { ...headers, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ qrData })
+    });
+    if (res.ok) {
+      const d = await res.json();
+      if (d.ok && d.amountRub > 0) return d;
+    }
+  } catch (e) { console.warn('Server resolve error:', e); }
+  return null;
+}
+
 // ── On QR scanned ──
-function onQrScanned(data) {
+async function onQrScanned(data) {
   if (!data || typeof data !== 'string') {
     showQrError(String(data || ''), 'Пустые данные QR-кода.');
     return;
@@ -524,18 +563,32 @@ function onQrScanned(data) {
   parsedQr = parseQrData(data);
 
   // Accept any payment-like QR. Only show error for clearly non-payment QRs
-  // (e.g. plain text / random URL with no payment markers).
   if (!parsedQr.isBank) {
-    // Be permissive: even if not detected as payment, still allow user to pay
-    // anything that's not obviously a junk text. Consider it payable when:
-    // - it has digits (could be a phone, account, amount)
-    // - or it's any URL
     const looksPayable = /\d/.test(data) || /^(https?:|tel:|sbp:)/i.test(data);
     if (!looksPayable) {
       showQrError(data, 'Этот QR не похож на платёжный.');
       return;
     }
     parsedQr.isBank = true;
+  }
+
+  // If no sum found locally — try server-side resolution
+  if (!parsedQr.sum || parsedQr.sum <= 0) {
+    $('scanSection').style.display = 'none';
+    $('qrError').classList.remove('show');
+    $('resolvingCard').classList.add('show');
+
+    const resolved = await resolveAmountFromServer(data);
+
+    $('resolvingCard').classList.remove('show');
+
+    if (resolved && resolved.amountRub > 0) {
+      parsedQr.sum = resolved.amountRub;
+      if (resolved.name && !parsedQr.name) parsedQr.name = resolved.name;
+      if (resolved.bankName && !parsedQr.bankName) parsedQr.bankName = resolved.bankName;
+      if (resolved.account && !parsedQr.account) parsedQr.account = resolved.account;
+      if (resolved.bic && !parsedQr.bic) parsedQr.bic = resolved.bic;
+    }
   }
 
   showPayConfirmation();

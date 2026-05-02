@@ -854,6 +854,152 @@ async function handleResolveNspk(req, env) {
   return json({ ok: false, reason: "amount_not_found" });
 }
 
+// POST /api/qr/resolve  — universal QR amount resolver
+// Accepts { qrData: "..." } with any QR content (URL, NSPK link, ST00012, etc.)
+async function handleQrResolve(req, env) {
+  const [user, err] = await requireUser(req, env);
+  if (err) return err;
+
+  let qrData = "";
+  if (req.method === "POST") {
+    const body = await req.json().catch(() => ({}));
+    qrData = String(body.qrData || body.data || body.url || "").trim();
+  } else {
+    const u = new URL(req.url);
+    qrData = String(u.searchParams.get("data") || u.searchParams.get("url") || "").trim();
+  }
+  if (!qrData) return bad("QR data required");
+
+  const ua = "Mozilla/5.0 (Linux; Android 13; SM-G991B) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36";
+
+  // Helper: try to parse amount from kopecks vs rubles
+  function normalizeAmount(raw) {
+    let n = Number(raw);
+    if (!n || !isFinite(n) || n <= 0) return 0;
+    if (n > 100000 && n === Math.floor(n)) n /= 100;
+    return n;
+  }
+
+  // ── 1. ST00011/ST00012 format ──
+  if (/^ST0001[12]/i.test(qrData)) {
+    const parts = qrData.split("|");
+    let amountRub = 0, name = "", bankName = "", bic = "", account = "";
+    for (const p of parts) {
+      const eq = p.indexOf("=");
+      if (eq < 0) continue;
+      const k = p.slice(0, eq).toLowerCase(), v = p.slice(eq + 1);
+      if (k === "sum") amountRub = parseInt(v, 10) / 100;
+      if (k === "name" || k === "payeename") name = v;
+      if (k === "bankname") bankName = v;
+      if (k === "bic") bic = v;
+      if (k === "personalacc") account = v;
+    }
+    if (amountRub > 0) return json({ ok: true, amountRub, name, bankName, account, bic, source: "st00012" });
+  }
+
+  // ── 2. NSPK / SBP URL → extract code → CBR + NSPK APIs ──
+  const nspkMatch = qrData.match(/(?:qr\.nspk\.ru|qr\.sbp\.ru|sub\.nspk\.ru)\/([A-Za-z0-9]+)/i);
+  if (nspkMatch) {
+    const code = nspkMatch[1];
+    // CBR payment-link API
+    try {
+      const res = await fetchWithTimeout(`https://upc.cbrpay.ru/v1/payment-link/${encodeURIComponent(code)}`, {
+        headers: { Accept: "application/json", Origin: "https://qr.nspk.ru", Referer: "https://qr.nspk.ru/", "User-Agent": ua }
+      }, 5000);
+      if (res.ok) {
+        const data = await res.json();
+        const pd = data?.paymentDetails || data?.details || data;
+        const amountRub = normalizeAmount(pd?.amount ?? pd?.sum ?? pd?.totalAmount);
+        if (amountRub > 0) return json({ ok: true, amountRub, name: pd?.payeeName ?? pd?.name ?? "", bankName: pd?.bankName ?? "", source: "cbr" });
+      }
+    } catch {}
+    // Fetch qr.nspk.ru page
+    try {
+      const res = await fetchWithTimeout(`https://qr.nspk.ru/${code}`, {
+        redirect: "follow", headers: { "User-Agent": ua, Accept: "text/html,*/*" }
+      }, 5000);
+      const finalUrl = new URL(res.url);
+      for (const k of ["sum", "amount", "Sum", "Amount"]) {
+        const v = finalUrl.searchParams.get(k);
+        if (v) { const a = normalizeAmount(v); if (a > 0) return json({ ok: true, amountRub: a, name: finalUrl.searchParams.get("name") || "", source: "nspk_redirect" }); }
+      }
+      const html = await res.text();
+      const jm = html.match(/"amount"\s*:\s*(\d+\.?\d*)/i) || html.match(/"sum"\s*:\s*(\d+\.?\d*)/i) || html.match(/data-amount="(\d+\.?\d*)"/i);
+      if (jm) { const a = normalizeAmount(jm[1]); if (a > 0) { const nm = html.match(/"payeeName"\s*:\s*"([^"]+)"/i) || html.match(/"name"\s*:\s*"([^"]+)"/i); return json({ ok: true, amountRub: a, name: nm ? nm[1] : "", source: "nspk_html" }); } }
+      const stMatch = html.match(/ST0001[12][^"'\s<>]+/i);
+      if (stMatch) { const pp = stMatch[0].split("|"); let ar = 0, nm = ""; for (const p of pp) { if (/^Sum=/i.test(p)) ar = parseInt(p.split("=")[1], 10) / 100; if (/^Name=/i.test(p)) nm = p.split("=")[1]; } if (ar > 0) return json({ ok: true, amountRub: ar, name: nm, source: "nspk_st" }); }
+    } catch {}
+    // NSPK SBP API
+    try {
+      const res = await fetchWithTimeout(`https://api.nspk.ru/sbp/v1/qr/${code}/image-info`, { headers: { Accept: "application/json", "User-Agent": ua } }, 3000);
+      if (res.ok) { const d = await res.json(); const a = normalizeAmount(d?.amount ?? d?.sum ?? d?.paymentDetails?.amount); if (a > 0) return json({ ok: true, amountRub: a, name: d?.payeeName ?? d?.name ?? "", source: "nspk_api" }); }
+    } catch {}
+  }
+
+  // ── 3. Any URL — fetch page, follow redirects, parse amount ──
+  let isUrl = false;
+  try { new URL(qrData); isUrl = true; } catch {}
+  if (isUrl) {
+    try {
+      const res = await fetchWithTimeout(qrData, {
+        redirect: "follow", headers: { "User-Agent": ua, Accept: "text/html,application/json,*/*" }
+      }, 6000);
+      // Check final URL params
+      const finalUrl = new URL(res.url);
+      for (const k of ["sum","Sum","amount","Amount","value","total","price","pay","money"]) {
+        const v = finalUrl.searchParams.get(k);
+        if (v) { const a = normalizeAmount(v); if (a > 0) return json({ ok: true, amountRub: a, name: finalUrl.searchParams.get("name") || "", source: "url_param" }); }
+      }
+      // Check if redirected to an NSPK URL
+      const redirNspk = res.url.match(/(?:qr\.nspk\.ru|qr\.sbp\.ru)\/([A-Za-z0-9]+)/i);
+      if (redirNspk) {
+        const code2 = redirNspk[1];
+        try {
+          const r2 = await fetchWithTimeout(`https://upc.cbrpay.ru/v1/payment-link/${encodeURIComponent(code2)}`, { headers: { Accept: "application/json", Origin: "https://qr.nspk.ru", Referer: "https://qr.nspk.ru/", "User-Agent": ua } }, 4000);
+          if (r2.ok) { const d = await r2.json(); const pd = d?.paymentDetails || d?.details || d; const a = normalizeAmount(pd?.amount ?? pd?.sum ?? pd?.totalAmount); if (a > 0) return json({ ok: true, amountRub: a, name: pd?.payeeName ?? pd?.name ?? "", source: "redirect_cbr" }); }
+        } catch {}
+      }
+      // Parse HTML body
+      const ct = res.headers.get("content-type") || "";
+      const body = await res.text();
+      // Try JSON-like fields
+      const amtPatterns = [
+        /"amount"\s*:\s*(\d+\.?\d*)/i, /"sum"\s*:\s*(\d+\.?\d*)/i,
+        /"totalAmount"\s*:\s*(\d+\.?\d*)/i, /"price"\s*:\s*(\d+\.?\d*)/i,
+        /data-amount="(\d+\.?\d*)"/i, /data-sum="(\d+\.?\d*)"/i,
+        /data-price="(\d+\.?\d*)"/i, /data-total="(\d+\.?\d*)"/i,
+        /class="[^"]*amount[^"]*"[^>]*>(\d[\d\s,.]*)/i,
+        /class="[^"]*price[^"]*"[^>]*>(\d[\d\s,.]*)/i,
+        /class="[^"]*sum[^"]*"[^>]*>(\d[\d\s,.]*)/i,
+        /(?:Сумма|сумма|Итого|итого|К оплате|к оплате|Total|Amount)\s*[:=]?\s*([\d\s,.]+)\s*(?:₽|руб|RUB|rub)/i,
+        /([\d\s,.]+)\s*(?:₽|руб\.?|RUB)\b/i,
+      ];
+      for (const pat of amtPatterns) {
+        const m = body.match(pat);
+        if (m) {
+          const cleaned = String(m[1]).replace(/\s/g, "").replace(",", ".");
+          const a = normalizeAmount(cleaned);
+          if (a > 0 && a < 10000000) {
+            const nm = body.match(/"payeeName"\s*:\s*"([^"]+)"/i) || body.match(/"merchant"\s*:\s*"([^"]+)"/i) || body.match(/"name"\s*:\s*"([^"]+)"/i);
+            return json({ ok: true, amountRub: a, name: nm ? nm[1] : "", source: "html_parse" });
+          }
+        }
+      }
+      // ST00012 embedded in HTML
+      const stm = body.match(/ST0001[12][^"'\s<>]+/i);
+      if (stm) { const pp = stm[0].split("|"); let ar = 0, nm = ""; for (const p of pp) { if (/^Sum=/i.test(p)) ar = parseInt(p.split("=")[1], 10) / 100; if (/^Name=/i.test(p)) nm = p.split("=")[1]; } if (ar > 0) return json({ ok: true, amountRub: ar, name: nm, source: "html_st" }); }
+    } catch {}
+  }
+
+  // ── 4. Fallback: regex for amount-like patterns in raw text ──
+  const mSum = qrData.match(/(?:^|[^\w])Sum=(\d+\.?\d*)/i);
+  if (mSum) { const a = normalizeAmount(mSum[1]); if (a > 0) return json({ ok: true, amountRub: a, source: "raw_sum" }); }
+  const mAmt = qrData.match(/amount[=:](\d+\.?\d*)/i);
+  if (mAmt) { const a = normalizeAmount(mAmt[1]); if (a > 0) return json({ ok: true, amountRub: a, source: "raw_amount" }); }
+
+  return json({ ok: false, reason: "amount_not_found" });
+}
+
 // POST /api/qr/submit  (JSON: qrData + amountRub + optional image)
 async function handleQrSubmit(req, env) {
   const [user, err] = await requireUser(req, env);
@@ -1485,6 +1631,8 @@ async function handleRequest(request, env, ctx) {
       return await handleQrHistory(request, env);
     if (path === "/api/qr/resolve-nspk" && method === "GET")
       return await handleResolveNspk(request, env);
+    if (path === "/api/qr/resolve" && (method === "POST" || method === "GET"))
+      return await handleQrResolve(request, env);
 
     // Withdraw
     if (path === "/api/withdraw" && method === "POST")
