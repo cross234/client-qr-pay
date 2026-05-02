@@ -854,6 +854,153 @@ async function handleResolveNspk(req, env) {
   return json({ ok: false, reason: "amount_not_found" });
 }
 
+// ════════════════════════════════════════════════════════════════
+//  NSPK PoW (Proof-of-Work) — SipHash-2-4 solver for CBR API
+//  Without these headers, upc.cbrpay.ru returns 403
+// ════════════════════════════════════════════════════════════════
+
+function _hexToBytes(hex) {
+  const out = new Uint8Array(hex.length / 2);
+  for (let i = 0; i < hex.length; i += 2) out[i / 2] = parseInt(hex.substr(i, 2), 16);
+  return out;
+}
+function _strToBytes(s) { const a = []; for (let i = 0; i < s.length; i++) a.push(s.charCodeAt(i)); return a; }
+function _r32(a, i) { return a[i + 3] << 24 | a[i + 2] << 16 | a[i + 1] << 8 | a[i]; }
+
+function _sipRound(v0, v1, v2, v3) {
+  // add v0+=v1, v2+=v3
+  let t;
+  t = v0.l + v1.l; v0.h = (v0.h + v1.h + ((t / 2) >>> 31)) >>> 0; v0.l = t >>> 0;
+  t = v2.l + v3.l; v2.h = (v2.h + v3.h + ((t / 2) >>> 31)) >>> 0; v2.l = t >>> 0;
+  // rotl v1 13, v3 16
+  let h, l;
+  h = v1.h; l = v1.l; v1.h = h << 13 | l >>> 19; v1.l = l << 13 | h >>> 19;
+  h = v3.h; l = v3.l; v3.h = h << 16 | l >>> 16; v3.l = l << 16 | h >>> 16;
+  // xor v1^=v0, v3^=v2
+  v1.h = (v1.h ^ v0.h) >>> 0; v1.l = (v1.l ^ v0.l) >>> 0;
+  v3.h = (v3.h ^ v2.h) >>> 0; v3.l = (v3.l ^ v2.l) >>> 0;
+  // swap v0 hi/lo
+  h = v0.h; v0.h = v0.l; v0.l = h;
+  // add v2+=v1, v0+=v3
+  t = v2.l + v1.l; v2.h = (v2.h + v1.h + ((t / 2) >>> 31)) >>> 0; v2.l = t >>> 0;
+  t = v0.l + v3.l; v0.h = (v0.h + v3.h + ((t / 2) >>> 31)) >>> 0; v0.l = t >>> 0;
+  // rotl v1 17, v3 21
+  h = v1.h; l = v1.l; v1.h = h << 17 | l >>> 15; v1.l = l << 17 | h >>> 15;
+  h = v3.h; l = v3.l; v3.h = h << 21 | l >>> 11; v3.l = l << 21 | h >>> 11;
+  // xor v1^=v2, v3^=v0
+  v1.h = (v1.h ^ v2.h) >>> 0; v1.l = (v1.l ^ v2.l) >>> 0;
+  v3.h = (v3.h ^ v0.h) >>> 0; v3.l = (v3.l ^ v0.l) >>> 0;
+  // swap v2 hi/lo
+  h = v2.h; v2.h = v2.l; v2.l = h;
+}
+
+function _sipHash24(msgBytes, keyBytes) {
+  const k0 = { h: _r32(keyBytes, 4), l: _r32(keyBytes, 0) };
+  const k1 = { h: _r32(keyBytes, 12), l: _r32(keyBytes, 8) };
+  const v0 = { h: k0.h, l: k0.l }, v1 = { h: k0.h, l: k0.l };
+  const v2 = { h: k1.h, l: k1.l }, v3 = { h: k1.h, l: k1.l };
+  v0.h ^= 0x736f6d65; v0.l ^= 0x70736575;
+  v1.h ^= 0x646f7261; v1.l ^= 0x6e646f6d;
+  v2.h ^= 0x6c796765; v2.l ^= 0x6e657261;
+  v3.h ^= 0x74656462; v3.l ^= 0x79746573;
+  const len = msgBytes.length;
+  const blocks = len - 7;
+  let p = 0, m;
+  while (p < blocks) {
+    m = { h: _r32(msgBytes, p + 4), l: _r32(msgBytes, p) };
+    v3.h ^= m.h; v3.l ^= m.l;
+    _sipRound(v0, v1, v2, v3); _sipRound(v0, v1, v2, v3);
+    v0.h ^= m.h; v0.l ^= m.l;
+    p += 8;
+  }
+  const last = new Uint8Array(8); last[7] = len;
+  let d = 0;
+  while (p < len) last[d++] = msgBytes[p++];
+  m = { h: last[7] << 24 | last[6] << 16 | last[5] << 8 | last[4], l: last[3] << 24 | last[2] << 16 | last[1] << 8 | last[0] };
+  v3.h ^= m.h; v3.l ^= m.l;
+  _sipRound(v0, v1, v2, v3); _sipRound(v0, v1, v2, v3);
+  v0.h ^= m.h; v0.l ^= m.l;
+  v2.h ^= 0xFF; v2.l ^= 0;
+  _sipRound(v0, v1, v2, v3); _sipRound(v0, v1, v2, v3);
+  _sipRound(v0, v1, v2, v3); _sipRound(v0, v1, v2, v3);
+  const f = { h: v0.h, l: v0.l };
+  f.h ^= v1.h; f.l ^= v1.l; f.h ^= v2.h; f.l ^= v2.l; f.h ^= v3.h; f.l ^= v3.l;
+  const out = new Uint8Array(8);
+  out[0] = f.l & 0xFF; out[1] = (f.l >> 8) & 0xFF; out[2] = (f.l >> 16) & 0xFF; out[3] = (f.l >> 24) & 0xFF;
+  out[4] = f.h & 0xFF; out[5] = (f.h >> 8) & 0xFF; out[6] = (f.h >> 16) & 0xFF; out[7] = (f.h >> 24) & 0xFF;
+  return out;
+}
+
+function _bytesToAbsBigInt(bytes) {
+  let v = 0n;
+  for (let i = 7; i >= 0; i--) v = (v << 8n) | BigInt(bytes[i]);
+  if (v > 0x7FFFFFFFFFFFFFFFn) v = -(v - 0xFFFFFFFFFFFFFFFFn - 1n);
+  return v < 0n ? -v : v;
+}
+
+function _sipHashValue(msg, keyBytes) {
+  return _bytesToAbsBigInt(_sipHash24(_strToBytes(msg), keyBytes));
+}
+
+function nspkSolvePow(params) {
+  const key = params.key || "00000000000000010000000000000001";
+  const version = params.paramsVersion || "prod_bypass_1";
+  const diff = BigInt(params.difficulty || 72057594037927940);
+  const maxCount = params.maxPowCount || 15;
+  const maxMs = params.maxTimeThresholdMs || 500;
+  const guid = crypto.randomUUID();
+  const keyBytes = _hexToBytes(key);
+
+  const allTs = [], allHash = [], allNonce = [];
+  let prevHash = 0, prevNonce = 0;
+  const startTime = Date.now();
+
+  for (let i = 0; i < maxCount; i++) {
+    const ts = Date.now();
+    let nonce = prevNonce, hash;
+    let found = false;
+    for (let attempt = 0; attempt < 100000; attempt++) {
+      nonce++;
+      const input = [nonce, guid, ts, prevHash].filter(x => String(x).length > 0).join(";");
+      hash = _sipHashValue(input, keyBytes);
+      if (hash < diff) { found = true; break; }
+      if (i > 0 && (Date.now() - startTime) > maxMs) break;
+    }
+    if (!found) break;
+    prevHash = hash; prevNonce = nonce;
+    allTs.push(ts); allHash.push(hash.toString()); allNonce.push(nonce);
+  }
+
+  allTs.push(Date.now());
+  return {
+    "X-Token-Version": version,
+    "X-Token-Timestamp": allTs.join(";"),
+    "X-Token-Pow": allHash.join(";"),
+    "X-Token-Nonce": allNonce.join(";"),
+    "X-Token-Guid": guid,
+    "X-Token-Perf-Count": String(allHash.length),
+    "X-Token-Perf-Time": String(Date.now() - startTime),
+  };
+}
+
+async function getNspkPowHeaders() {
+  try {
+    const cfgRes = await fetchWithTimeout("https://qr.nspk.ru/proxyapp/apiConfig.json", { headers: { Accept: "application/json" } }, 3000);
+    if (!cfgRes.ok) throw new Error("apiConfig " + cfgRes.status);
+    const cfg = await cfgRes.json();
+    return nspkSolvePow(cfg.params || {});
+  } catch {
+    // Fallback: use hardcoded params
+    return nspkSolvePow({
+      difficulty: 72057594037927940,
+      key: "11032FD175F1998436DE0C6F969325A6",
+      maxPowCount: 15,
+      maxTimeThresholdMs: 500,
+      paramsVersion: "prod_bypass_1",
+    });
+  }
+}
+
 // POST /api/qr/resolve  — universal QR amount resolver
 // Accepts { qrData: "..." } with any QR content (URL, NSPK link, ST00012, etc.)
 async function handleQrResolve(req, env) {
@@ -964,11 +1111,12 @@ async function handleQrResolve(req, env) {
       } catch {}
     }
 
-    // 2b. CBR UPC payment-link API
+    // 2b. CBR UPC payment-link API (requires PoW headers)
     try {
+      const powHeaders = await getNspkPowHeaders();
       const res = await fetchWithTimeout(`https://upc.cbrpay.ru/v1/payment-link/${encodeURIComponent(nspkCode)}`, {
-        headers: { Accept: "application/json", Origin: "https://qr.nspk.ru", Referer: "https://qr.nspk.ru/", "User-Agent": ua }
-      }, 5000);
+        headers: { Accept: "application/json", Origin: "https://qr.nspk.ru", Referer: "https://qr.nspk.ru/", "User-Agent": ua, ...powHeaders }
+      }, 8000);
       if (res.ok) {
         const data = await res.json();
         const pd = data?.paymentDetails || data?.details || data;
