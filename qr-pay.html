@@ -342,6 +342,14 @@ function authHeaders(extra = {}) {
 
 // ── Telegram WebApp QR Scanner ──
 const tgApp = window.Telegram && window.Telegram.WebApp;
+
+if (tgApp) {
+  try {
+    tgApp.ready();
+    tgApp.expand();
+  } catch (_) {}
+}
+
 const isInsideTg = !!(tgApp && (
   (tgApp.platform && tgApp.platform !== 'unknown') ||
   (tgApp.initData && tgApp.initData.length > 0) ||
@@ -350,27 +358,83 @@ const isInsideTg = !!(tgApp && (
 ));
 const hasTgScanner = !!(isInsideTg && tgApp && typeof tgApp.showScanQrPopup === 'function');
 
-async function ensureAuth() {
-  // 1. Проверяем уже сохранённый токен
+async function fetchWithTimeout(url, options = {}, timeoutMs = 7000) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+
+  try {
+    return await fetch(url, {
+      ...options,
+      signal: controller.signal
+    });
+  } finally {
+    clearTimeout(timer);
+  }
+}
+  
+  async function ensureAuth() {
+  console.log('QR page BASE:', BASE);
+  console.log('QR page has token:', !!TOKEN);
+  console.log('QR page tg initData:', !!(tgApp && tgApp.initData));
+
+  // 1. Проверяем сохранённый токен
   if (TOKEN) {
     try {
-      const r = await fetch(BASE + '/api/me', {
+      const r = await fetchWithTimeout(BASE + '/api/me', {
         headers: authHeaders()
       });
 
-      if (r.ok) {
-        bootMeData = await r.json();
+      const d = await r.json().catch(() => ({}));
+
+      if (r.ok && d.ok && d.user) {
+        bootMeData = d;
         return true;
       }
-    } catch (_) {}
 
-    // Если токен битый — очищаем
+      console.warn('/api/me rejected token:', d);
+    } catch (e) {
+      console.warn('/api/me error:', e);
+    }
+
     localStorage.removeItem('auth_token');
     localStorage.removeItem('mw_token');
     sessionStorage.removeItem('auth_token');
     sessionStorage.removeItem('mw_token');
     TOKEN = '';
   }
+
+  // 2. Авторизация внутри Telegram Mini App
+  if (tgApp && tgApp.initData && tgApp.initData.length > 0) {
+    try {
+      const r = await fetchWithTimeout(BASE + '/api/auth/telegram', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ initData: tgApp.initData })
+      });
+
+      const d = await r.json().catch(() => ({}));
+
+      console.log('/api/auth/telegram response:', d);
+
+      if (r.ok && d.ok && d.token) {
+        TOKEN = d.token;
+
+        localStorage.setItem('auth_token', TOKEN);
+        localStorage.setItem('mw_token', TOKEN);
+        localStorage.setItem('worker_base', BASE);
+
+        bootMeData = d;
+        return true;
+      }
+
+      console.warn('Telegram auth failed:', d);
+    } catch (e) {
+      console.warn('Telegram auth request error:', e);
+    }
+  }
+
+  return false;
+}
 
   // 2. Если открыто внутри Telegram — логинимся через initData
   if (tgApp && tgApp.initData && tgApp.initData.length > 0) {
@@ -399,9 +463,17 @@ async function ensureAuth() {
 }
 
 function showNeedLogin() {
-  $('balance').innerHTML = '— <span>USDT</span>';
+  $('balance').innerHTML = 'Ошибка входа <span>USDT</span>';
   $('scanBtn').disabled = true;
-  $('scanBtn').innerHTML = 'Откройте через Telegram-бота';
+  $('scanBtn').innerHTML = 'Перезапустите Mini App';
+
+  alert(
+    'Не удалось авторизоваться в Telegram Mini App.\n\n' +
+    'Проверь:\n' +
+    '1) страница открыта именно через кнопку Web App в боте;\n' +
+    '2) в Worker задан BOT_TOKEN;\n' +
+    '3) BASE ведёт на правильный Worker: ' + BASE
+  );
 }
 
 // ── Scan button ──
@@ -544,7 +616,7 @@ function parseQrData(raw) {
                   || '';
 
     // Recognize known payment hosts (SBP, banks)
-    const host = (urlObj.hostname || '').toLowerCase();
+        // Recognize known payment hosts (SBP, banks)
     const paymentHosts = [
       'qr.nspk.ru', 'sub.nspk.ru', 'qr.sbp.ru',
       'qr.sberbank.ru', 'pay.sber.ru',
@@ -553,6 +625,7 @@ function parseQrData(raw) {
       'qr.vtb.ru', 'pay.vtb.ru',
       'qr.raiffeisen.ru', 'qr.psbank.ru', 'qr.gazprombank.ru',
     ];
+    
     const isKnownPayHost = paymentHosts.some(h => host === h || host.endsWith('.' + h));
     // Anything that looks like a payment URL
     if (isKnownPayHost
@@ -848,20 +921,21 @@ async function loadBalance() {
     let data = bootMeData;
 
     if (!data) {
-      const res = await fetch(BASE + '/api/me', {
+      const res = await fetchWithTimeout(BASE + '/api/me', {
         headers: authHeaders()
       });
 
-      if (!res.ok) {
-        throw new Error('Unauthorized');
-      }
+      data = await res.json().catch(() => ({}));
 
-      data = await res.json();
+      if (!res.ok || !data.ok) {
+        throw new Error(data.error || 'Unauthorized');
+      }
     }
 
-    const user = data.user || data;
+    const user = data.user || {};
 
     currentBalance = Number(user.balance || 0);
+
     $('balance').innerHTML = currentBalance.toFixed(2) + ' <span>USDT</span>';
 
     if (data.rate && !currentRate) {
@@ -873,22 +947,26 @@ async function loadBalance() {
     $('balance').innerHTML = '— <span>USDT</span>';
   }
 }
-
 async function loadRate() {
   try {
-    const res = await fetch(BASE + '/api/rate', {
+    const res = await fetchWithTimeout(BASE + '/api/rate', {
       headers: authHeaders()
     });
 
-    const data = await res.json();
-    currentRate = Number(data.rate || 0);
+    const data = await res.json().catch(() => ({}));
+
+    if (data.ok && data.rate) {
+      currentRate = Number(data.rate || 0);
+    }
   } catch (e) {
     console.warn('Rate load error:', e);
   }
 }
 
 (async function initPage() {
+  $('balance').innerHTML = 'Загрузка... <span>USDT</span>';
   $('scanBtn').disabled = true;
+  $('scanBtn').innerHTML = 'Загрузка...';
 
   const ok = await ensureAuth();
 
@@ -897,10 +975,8 @@ async function loadRate() {
     return;
   }
 
-  await Promise.all([
-    loadBalance(),
-    loadRate()
-  ]);
+  await loadBalance();
+  await loadRate();
 
   $('scanBtn').disabled = false;
   $('scanBtn').innerHTML = '<span>📱</span> Сканировать QR-код';
