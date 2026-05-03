@@ -371,107 +371,12 @@ async function fetchWithTimeout(url, options = {}, timeoutMs = 7000) {
     clearTimeout(timer);
   }
 }
-  
-  async function ensureAuth() {
-  console.log('QR page BASE:', BASE);
-  console.log('QR page has token:', !!TOKEN);
-  console.log('QR page tg initData:', !!(tgApp && tgApp.initData));
-
-  // 1. Проверяем сохранённый токен
-  if (TOKEN) {
-    try {
-      const r = await fetchWithTimeout(BASE + '/api/me', {
-        headers: authHeaders()
-      });
-
-      const d = await r.json().catch(() => ({}));
-
-      if (r.ok && d.ok && d.user) {
-        bootMeData = d;
-        return true;
-      }
-
-      console.warn('/api/me rejected token:', d);
-    } catch (e) {
-      console.warn('/api/me error:', e);
-    }
-
-    localStorage.removeItem('auth_token');
-    localStorage.removeItem('mw_token');
-    sessionStorage.removeItem('auth_token');
-    sessionStorage.removeItem('mw_token');
-    TOKEN = '';
-  }
-
-  // 2. Авторизация внутри Telegram Mini App
-  if (tgApp && tgApp.initData && tgApp.initData.length > 0) {
-    try {
-      const r = await fetchWithTimeout(BASE + '/api/auth/telegram', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ initData: tgApp.initData })
-      });
-
-      const d = await r.json().catch(() => ({}));
-
-      console.log('/api/auth/telegram response:', d);
-
-      if (r.ok && d.ok && d.token) {
-        TOKEN = d.token;
-
-        localStorage.setItem('auth_token', TOKEN);
-        localStorage.setItem('mw_token', TOKEN);
-        localStorage.setItem('worker_base', BASE);
-
-        bootMeData = d;
-        return true;
-      }
-
-      console.warn('Telegram auth failed:', d);
-    } catch (e) {
-      console.warn('Telegram auth request error:', e);
-    }
-  }
-
-  return false;
-}
-
-
-function showNeedLogin() {
-  $('balance').innerHTML = 'Ошибка входа <span>USDT</span>';
-  $('scanBtn').disabled = true;
-  $('scanBtn').innerHTML = 'Перезапустите Mini App';
-
-  alert(
-    'Не удалось авторизоваться в Telegram Mini App.\n\n' +
-    'Проверь:\n' +
-    '1) страница открыта именно через кнопку Web App в боте;\n' +
-    '2) в Worker задан BOT_TOKEN;\n' +
-    '3) BASE ведёт на правильный Worker: ' + BASE
-  );
-}
-
-// ── Scan button ──
-async function fetchWithTimeout(url, options = {}, timeoutMs = 7000) {
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), timeoutMs);
-
-  try {
-    return await fetch(url, {
-      ...options,
-      signal: controller.signal
-    });
-  } finally {
-    clearTimeout(timer);
-  }
-}
 
 async function ensureAuth() {
   console.log('QR page BASE:', BASE);
   console.log('QR page has token:', !!TOKEN);
   console.log('QR page tg initData:', !!(tgApp && tgApp.initData));
 
-  // 1. Проверяем сохранённый токен
   if (TOKEN) {
     try {
       const r = await fetchWithTimeout(BASE + '/api/me', {
@@ -497,7 +402,6 @@ async function ensureAuth() {
     TOKEN = '';
   }
 
-  // 2. Авторизация внутри Telegram Mini App
   if (tgApp && tgApp.initData && tgApp.initData.length > 0) {
     try {
       const r = await fetchWithTimeout(BASE + '/api/auth/telegram', {
@@ -544,7 +448,6 @@ function showNeedLogin() {
   );
 }
 
-// ── Scan button ──
 $('scanBtn').onclick = startScan;
 $('retryScanBtn').onclick = () => {
   resetToScan();
@@ -588,7 +491,6 @@ function startScan() {
   }
 }
 
-// Fallback: file upload
 $('fileInput').addEventListener('change', function(e) {
   const file = e.target.files[0];
   if (!file) return;
@@ -603,8 +505,6 @@ $('fileInput').addEventListener('change', function(e) {
 
   reader.readAsDataURL(file);
 });
-
-// ── Parse QR data ──
 
 // ── Parse QR data ──
 function parseQrData(raw) {
