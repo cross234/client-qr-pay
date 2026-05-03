@@ -317,14 +317,28 @@ body {
 </div>
 
 <script>
-const TOKEN = localStorage.getItem('auth_token') || '';
-const BASE = localStorage.getItem('worker_base') || 'https://client-qr-pay.kireeshka73.workers.dev';
-const headers = { 'Authorization': 'Bearer ' + TOKEN };
+const API_DEFAULT = 'https://client-qr-pay.kireeshka73.workers.dev';
+const BASE = (localStorage.getItem('worker_base') || API_DEFAULT).replace(/\/+$/, '');
+
+let TOKEN =
+  localStorage.getItem('auth_token') ||
+  localStorage.getItem('mw_token') ||
+  sessionStorage.getItem('auth_token') ||
+  sessionStorage.getItem('mw_token') ||
+  '';
+
 const $ = id => document.getElementById(id);
 
 let currentRate = null;
 let currentBalance = null;
-let parsedQr = null;   // { raw, name, bankName, account, bic, sum, purpose, ... }
+let parsedQr = null;
+let bootMeData = null;
+
+function authHeaders(extra = {}) {
+  const h = { ...extra };
+  if (TOKEN) h['Authorization'] = 'Bearer ' + TOKEN;
+  return h;
+}
 
 // ── Telegram WebApp QR Scanner ──
 const tgApp = window.Telegram && window.Telegram.WebApp;
@@ -336,8 +350,58 @@ const isInsideTg = !!(tgApp && (
 ));
 const hasTgScanner = !!(isInsideTg && tgApp && typeof tgApp.showScanQrPopup === 'function');
 
-if (tgApp) {
-  try { tgApp.ready(); tgApp.expand(); } catch(_){}
+async function ensureAuth() {
+  // 1. Проверяем уже сохранённый токен
+  if (TOKEN) {
+    try {
+      const r = await fetch(BASE + '/api/me', {
+        headers: authHeaders()
+      });
+
+      if (r.ok) {
+        bootMeData = await r.json();
+        return true;
+      }
+    } catch (_) {}
+
+    // Если токен битый — очищаем
+    localStorage.removeItem('auth_token');
+    localStorage.removeItem('mw_token');
+    sessionStorage.removeItem('auth_token');
+    sessionStorage.removeItem('mw_token');
+    TOKEN = '';
+  }
+
+  // 2. Если открыто внутри Telegram — логинимся через initData
+  if (tgApp && tgApp.initData && tgApp.initData.length > 0) {
+    try {
+      const r = await fetch(BASE + '/api/auth/telegram', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ initData: tgApp.initData })
+      });
+
+      const d = await r.json().catch(() => ({}));
+
+      if (r.ok && d.ok && d.token) {
+        TOKEN = d.token;
+        localStorage.setItem('auth_token', TOKEN);
+        localStorage.setItem('worker_base', BASE);
+        bootMeData = d;
+        return true;
+      }
+    } catch (e) {
+      console.warn('Telegram auth error:', e);
+    }
+  }
+
+  return false;
+}
+
+function showNeedLogin() {
+  $('balance').innerHTML = '— <span>USDT</span>';
+  $('scanBtn').disabled = true;
+  $('scanBtn').innerHTML = 'Откройте через Telegram-бота';
 }
 
 // ── Scan button ──
@@ -547,7 +611,7 @@ async function resolveAmountFromServer(qrData) {
   try {
     const res = await fetch(BASE + '/api/qr/resolve', {
       method: 'POST',
-      headers: { ...headers, 'Content-Type': 'application/json' },
+      headers: authHeaders({ 'Content-Type': 'application/json' }),
       body: JSON.stringify({ qrData })
     });
     if (res.ok) {
@@ -748,7 +812,7 @@ $('confirmBtn').onclick = async () => {
   try {
     const res = await fetch(BASE + '/api/qr/submit', {
       method: 'POST',
-      headers: { ...headers, 'Content-Type': 'application/json' },
+      headers: authHeaders({ 'Content-Type': 'application/json' }),
       body: JSON.stringify({
         qrData: parsedQr.raw,
         amountRub: amountRub,
@@ -781,26 +845,66 @@ $('confirmBtn').onclick = async () => {
 // ── Load balance + rate ──
 async function loadBalance() {
   try {
-    const res = await fetch(BASE + '/api/me', { headers });
-    const data = await res.json();
+    let data = bootMeData;
+
+    if (!data) {
+      const res = await fetch(BASE + '/api/me', {
+        headers: authHeaders()
+      });
+
+      if (!res.ok) {
+        throw new Error('Unauthorized');
+      }
+
+      data = await res.json();
+    }
+
     const user = data.user || data;
-    currentBalance = parseFloat(user.balance || 0);
+
+    currentBalance = Number(user.balance || 0);
     $('balance').innerHTML = currentBalance.toFixed(2) + ' <span>USDT</span>';
-  } catch {
+
+    if (data.rate && !currentRate) {
+      currentRate = Number(data.rate || 0);
+    }
+  } catch (e) {
+    console.warn('Balance load error:', e);
+    currentBalance = 0;
     $('balance').innerHTML = '— <span>USDT</span>';
   }
 }
 
 async function loadRate() {
   try {
-    const res = await fetch(BASE + '/api/rate', { headers });
+    const res = await fetch(BASE + '/api/rate', {
+      headers: authHeaders()
+    });
+
     const data = await res.json();
-    currentRate = parseFloat(data.rate || 0);
-  } catch {}
+    currentRate = Number(data.rate || 0);
+  } catch (e) {
+    console.warn('Rate load error:', e);
+  }
 }
 
-loadBalance();
-loadRate();
+(async function initPage() {
+  $('scanBtn').disabled = true;
+
+  const ok = await ensureAuth();
+
+  if (!ok) {
+    showNeedLogin();
+    return;
+  }
+
+  await Promise.all([
+    loadBalance(),
+    loadRate()
+  ]);
+
+  $('scanBtn').disabled = false;
+  $('scanBtn').innerHTML = '<span>📱</span> Сканировать QR-код';
+})();
 </script>
 </body>
 </html>
