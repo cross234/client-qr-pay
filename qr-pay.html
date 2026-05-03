@@ -656,13 +656,28 @@ async function resolveAmountFromServer(qrData) {
     const res = await fetch(BASE + '/api/qr/resolve', {
       method: 'POST',
       headers: authHeaders({ 'Content-Type': 'application/json' }),
-      body: JSON.stringify({ qrData })
+      body: JSON.stringify({
+        qrData,
+        debug: true
+      })
     });
-    if (res.ok) {
-      const d = await res.json();
-      if (d.ok && d.amountRub > 0) return d;
-    }
-  } catch (e) { console.warn('Server resolve error:', e); }
+
+    const d = await res.json().catch(() => ({}));
+
+    alert(
+      'Ответ /api/qr/resolve:\n\n' +
+      JSON.stringify(d, null, 2).slice(0, 3500)
+    );
+
+    console.log('QR DATA:', qrData);
+    console.log('QR RESOLVE RESPONSE:', d);
+
+    if (res.ok && d.ok && d.amountRub > 0) return d;
+  } catch (e) {
+    alert('Ошибка resolve: ' + e.message);
+    console.warn('Server resolve error:', e);
+  }
+
   return null;
 }
 
