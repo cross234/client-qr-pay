@@ -478,7 +478,7 @@ h1 { font-size: 20px; font-weight: 700; color: var(--accent); }
 <script>
 const API = (localStorage.getItem('worker_base') || 'https://client-qr-pay.kireeshka73.workers.dev').replace(/\/+$/, '');
 const CF_BASE = 'https://api.crossflag.org';
-const REQUEST_TTL_MS = 10 * 60 * 1000;
+const REQUEST_TTL_MS = 7 * 60 * 1000;
 
 let rate = 0;
 let deal = null;
@@ -850,7 +850,7 @@ function startWaiting() {
 
   // Poll for matching offers every 5 sec
   pollForMatch();
-  waitPollInt = setInterval(pollForMatch, 5000);
+  waitPollInt = setInterval(pollForMatch, 2000);
 }
 
 function stopWaitPolling() {
@@ -865,7 +865,7 @@ async function pollForMatch() {
 
   try {
     // Check Moon Wallet offers
-    const d = await api('/api/exchange/offers');
+    const d = await api('/api/exchange/offers?t=' + Date.now());
     const offers = Array.isArray(d?.offers) ? d.offers : [];
     const min = Number(currentReq.minRub), max = Number(currentReq.maxRub);
     let best = null, bestScore = Infinity, mid = (min + max) / 2;
