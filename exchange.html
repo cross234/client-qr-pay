@@ -487,6 +487,8 @@ let waitPollBusy = false;
 
 let rate = 0;
 let deal = null;
+  let offersAutoRefreshInt = null;
+let currentScreenId = 'screenLoading';
 let timerInt = null;
 let keepAliveInt = null;
 let currentReq = null;   // active buy request {id, minRub, maxRub, count, createdAt}
@@ -572,8 +574,30 @@ async function api(path, opts = {}) {
 }
 
 function show(id) {
+  currentScreenId = id;
+
   document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
   document.getElementById(id).classList.add('active');
+
+  if (id === 'screenOffers' || id === 'screenEmpty') {
+    startOffersAutoRefresh();
+  } else {
+    stopOffersAutoRefresh();
+  }
+}
+
+function startOffersAutoRefresh() {
+  clearInterval(offersAutoRefreshInt);
+
+  offersAutoRefreshInt = setInterval(() => {
+    if (currentScreenId === 'screenOffers' || currentScreenId === 'screenEmpty') {
+      loadOffers(true);
+    }
+  }, 2000);
+}
+
+function stopOffersAutoRefresh() {
+  clearInterval(offersAutoRefreshInt);
 }
 
 function toast(msg, ms = 2600) {
@@ -627,8 +651,8 @@ function methodLabel(m) {
 }
 
 // ══ Offers ══════════════════════════════════════════════
-async function loadOffers() {
-  show('screenLoading');
+async function loadOffers(silent = false) {
+  if (!silent) show('screenLoading');
   try {
     const [rateD, offersD] = await Promise.all([
   api('/api/exchange/rate'),
@@ -989,6 +1013,20 @@ async function pollForMatch() {
           ...currentReq,
           ...freshReq
         };
+
+        if (freshReq.lastMatchedOffer && freshReq.lastMatchedOffer.id) {
+  foundOffer = freshReq.lastMatchedOffer;
+  setWaitFound(foundOffer);
+  stopWaitPolling();
+  return;
+}
+
+if (Array.isArray(freshReq.matchedOffers) && freshReq.matchedOffers.length > 0) {
+  foundOffer = freshReq.matchedOffers[0];
+  setWaitFound(foundOffer);
+  stopWaitPolling();
+  return;
+}
 
         const ids = Array.isArray(freshReq.matchedOfferIds)
           ? freshReq.matchedOfferIds
