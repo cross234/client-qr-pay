@@ -488,6 +488,10 @@ let waitPollBusy = false;
 let rate = 0;
 let deal = null;
   let offersAutoRefreshInt = null;
+  let waitPollBusy = false;
+
+let rate = 0;
+let deal = null;
 let currentScreenId = 'screenLoading';
 let timerInt = null;
 let keepAliveInt = null;
@@ -977,7 +981,7 @@ function startWaiting() {
 
   // Poll for matching offers every 5 sec
   pollForMatch();
-  waitPollInt = setInterval(pollForMatch, 1500);
+  waitPollInt = setInterval(pollForMatch, 1200);
 }
 
 function stopWaitPolling() {
@@ -986,39 +990,53 @@ function stopWaitPolling() {
 }
 
 async function pollForMatch() {
-  if (!currentReq || foundOffer) return;
   if (waitPollBusy) return;
+  if (!currentReq || foundOffer) return;
+
+  const elapsed = Date.now() - Number(currentReq.createdAt || 0);
+
+  if (elapsed >= REQUEST_TTL_MS) {
+    setWaitExpired();
+    return;
+  }
 
   waitPollBusy = true;
 
   try {
-    const elapsed = Date.now() - Number(currentReq.createdAt || 0);
+    const d = await api('/api/exchange/offers?t=' + Date.now());
 
-    if (elapsed >= REQUEST_TTL_MS) {
-      setWaitExpired();
-      return;
-    }
-
+    const offers = Array.isArray(d?.offers) ? d.offers : [];
     const min = Number(currentReq.minRub);
     const max = Number(currentReq.maxRub);
+
+    let best = null;
+    let bestScore = Infinity;
     const mid = (min + max) / 2;
 
-    try {
-      const reqData = await api('/api/exchange/buy_requests?t=' + Date.now());
-      const items = Array.isArray(reqData?.items) ? reqData.items : [];
-      const freshReq = items.find(r => String(r.id) === String(currentReq.id));
+    for (const o of offers) {
+      const a = Number(o.amountRub);
 
-      if (freshReq) {
-        currentReq = {
-          ...currentReq,
-          ...freshReq
-        };
+      if (!isFinite(a) || a < min || a > max) continue;
 
-        if (freshReq.lastMatchedOffer && freshReq.lastMatchedOffer.id) {
-  foundOffer = freshReq.lastMatchedOffer;
-  setWaitFound(foundOffer);
-  stopWaitPolling();
-  return;
+      const score = Math.abs(a - mid);
+
+      if (score < bestScore) {
+        bestScore = score;
+        best = o;
+      }
+    }
+
+    if (best) {
+      foundOffer = best;
+      setWaitFound(best);
+      stopWaitPolling();
+      return;
+    }
+  } catch (e) {
+    console.warn('pollForMatch error:', e);
+  } finally {
+    waitPollBusy = false;
+  }
 }
 
 if (Array.isArray(freshReq.matchedOffers) && freshReq.matchedOffers.length > 0) {
