@@ -196,6 +196,7 @@ const amountRub = p.get('amountRub') || '';
 const usdt      = p.get('usdt')      || '';
 
 const API = (localStorage.getItem('worker_base') || 'https://client-qr-pay.kireeshka73.workers.dev').replace(/\/+$/, '');
+let dealPollInt = null;
 
 function getToken() {
   try {
@@ -273,6 +274,124 @@ function setStatus(msg, kind) {
   el.className = 'status-msg ' + (kind || '');
 }
 
+function stopDealStatusPolling() {
+  if (dealPollInt) {
+    clearInterval(dealPollInt);
+    dealPollInt = null;
+  }
+}
+
+function startDealStatusPolling() {
+  stopDealStatusPolling();
+
+  pollDealStatus();
+  dealPollInt = setInterval(pollDealStatus, 3000);
+}
+
+async function pollDealStatus() {
+  if (!offerId) return;
+
+  const token = getToken();
+
+  try {
+    const res = await fetch(
+      API + '/api/exchange/deal/' + encodeURIComponent(offerId) + '?t=' + Date.now(),
+      {
+        method: 'GET',
+        headers: token ? { 'Authorization': 'Bearer ' + token } : {}
+      }
+    );
+
+    const data = await res.json().catch(() => ({}));
+
+    if (!data.ok || !data.deal) return;
+
+    const status = String(data.deal.status || '').toUpperCase();
+
+    if (status === 'SUCCESS' || status === 'COMPLETED') {
+      stopDealStatusPolling();
+      renderFinalSuccess(data.deal);
+      return;
+    }
+
+    if (status === 'ERROR' || status === 'REJECTED' || status === 'CANCELLED') {
+      stopDealStatusPolling();
+      renderFinalError(data.deal);
+      return;
+    }
+  } catch (e) {
+    console.warn('deal status polling error:', e);
+  }
+}
+
+function renderFinalSuccess(dealData) {
+  const credited =
+    dealData.creditedUsdt ||
+    dealData.amountUsdt ||
+    usdt ||
+    '';
+
+  const rub =
+    dealData.amountRub ||
+    amountRub ||
+    '';
+
+  document.getElementById('formSection').style.display = 'none';
+
+  const success = document.getElementById('successSection');
+  success.style.display = 'block';
+
+  success.innerHTML = `
+    <div class="success-icon">🎉</div>
+    <div class="success-title">Покупка успешно завершена!</div>
+    <div class="success-desc">
+      Оператор подтвердил оплату. USDT зачислены на ваш баланс Moon Wallet.
+    </div>
+
+    <div class="success-steps">
+      <div class="s-step done"><span class="s-step-icon">✅</span>Оплата отмечена</div>
+      <div class="s-step done"><span class="s-step-icon">📄</span>Документы получены</div>
+      <div class="s-step done"><span class="s-step-icon">🔍</span>Платёж проверен оператором</div>
+      <div class="s-step done"><span class="s-step-icon">💸</span>USDT зачислены на баланс</div>
+    </div>
+
+    <div class="instruction-box" style="text-align:left">
+      💰 Сумма оплаты: <b>${rub ? fmtRub(rub) + ' ₽' : '—'}</b><br>
+      💵 Зачислено: <b>${credited ? credited + ' USDT' : 'USDT'}</b>
+    </div>
+
+    <button class="back-btn-wide" onclick="location.href='index.html'">
+      Вернуться на главный экран
+    </button>
+  `;
+}
+
+function renderFinalError(dealData) {
+  document.getElementById('formSection').style.display = 'none';
+
+  const success = document.getElementById('successSection');
+  success.style.display = 'block';
+
+  success.innerHTML = `
+    <div class="success-icon">❌</div>
+    <div class="success-title">Проверка не прошла</div>
+    <div class="success-desc">
+      Оператор отклонил сделку или отметил ошибку. Если вы уверены, что оплатили правильно, напишите в поддержку.
+    </div>
+
+    <div class="success-steps">
+      <div class="s-step done"><span class="s-step-icon">✅</span>Оплата отмечена</div>
+      <div class="s-step done"><span class="s-step-icon">📄</span>Документы получены</div>
+      <div class="s-step active"><span class="s-step-icon">❌</span>Проверка отклонена</div>
+      <div class="s-step wait"><span class="s-step-icon">💸</span>Зачисление не выполнено</div>
+    </div>
+
+    <button class="back-btn-wide" onclick="location.href='exchange.html'">
+      Вернуться к предложениям
+    </button>
+  `;
+}
+
 async function submitProof() {
   const pdfFile  = document.getElementById('pdfInput').files[0];
   const shotFile = document.getElementById('shotInput').files[0];
@@ -307,11 +426,12 @@ async function submitProof() {
     });
     const data = await res.json().catch(() => ({ ok: false, error: 'Ошибка сервера' }));
 
-    if (data.ok || res.status === 200) {
-      // Show success screen
-      document.getElementById('formSection').style.display = 'none';
-      document.getElementById('successSection').style.display = 'block';
-    } else {
+   if (data.ok || res.status === 200) {
+  document.getElementById('formSection').style.display = 'none';
+  document.getElementById('successSection').style.display = 'block';
+
+  startDealStatusPolling();
+} else {
       setStatus('Ошибка: ' + (data.error || 'попробуйте ещё раз'), 'bad');
       btn.disabled = false;
       btn.textContent = 'Отправить на проверку';
