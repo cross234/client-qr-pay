@@ -658,27 +658,27 @@ async function resolveAmountFromServer(qrData) {
       headers: authHeaders({ 'Content-Type': 'application/json' }),
       body: JSON.stringify({
         qrData,
-        debug: true
+        debug: false
       })
     });
 
     const d = await res.json().catch(() => ({}));
 
-    alert(
-      'Ответ /api/qr/resolve:\n\n' +
-      JSON.stringify(d, null, 2).slice(0, 3500)
-    );
-
     console.log('QR DATA:', qrData);
     console.log('QR RESOLVE RESPONSE:', d);
 
-    if (res.ok && d.ok && d.amountRub > 0) return d;
-  } catch (e) {
-    alert('Ошибка resolve: ' + e.message);
-    console.warn('Server resolve error:', e);
-  }
+    if (res.ok && d.ok && Number(d.amountRub) > 0) {
+      return {
+        ...d,
+        amountRub: Number(d.amountRub)
+      };
+    }
 
-  return null;
+    return null;
+  } catch (e) {
+    console.warn('Server resolve error:', e);
+    return null;
+  }
 }
 
 // ── On QR scanned ──
