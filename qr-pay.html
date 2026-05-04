@@ -281,7 +281,7 @@ body {
     </div>
 
     <div class="amount-input-wrap" id="amountManual">
-      <div class="label">В QR-коде нет суммы — введите вручную</div>
+      <div class="label">Не удалось автоматически получить сумму — введите вручную</div>
       <input type="number" id="amountInput" inputmode="decimal" placeholder="0" step="0.01" min="1">
       <div class="hint" id="amountHint">≈ 0 USDT</div>
       <div class="qr-raw-preview" id="qrRawPreview"></div>
@@ -547,7 +547,11 @@ function parseQrData(raw) {
   if (isUrl) {
     // Check if this is an NSPK/SBP URL where sum is ALWAYS in kopecks
     const host = (urlObj.hostname || '').toLowerCase();
-    const isNspkHost = host === 'qr.nspk.ru' || host === 'sub.nspk.ru' || host === 'qr.sbp.ru';
+    const isNspkHost =
+  host === 'qr.nspk.ru' ||
+  host === 'sub.nspk.ru' ||
+  host === 'qr.sbp.ru' ||
+  host.endsWith('.nspk.ru');
 
     // Try 'sum' param first (NSPK standard, in kopecks)
     const sumRaw = urlObj.searchParams.get('sum') || urlObj.searchParams.get('Sum') || urlObj.searchParams.get('SUM');
@@ -651,34 +655,115 @@ function parseQrData(raw) {
 }
 
 // ── Resolve amount from server ──
-async function resolveAmountFromServer(qrData) {
+function extractNspkCodeFromQr(qrData) {
+  const raw = String(qrData || '').trim();
+
   try {
-    const res = await fetch(BASE + '/api/qr/resolve', {
-      method: 'POST',
-      headers: authHeaders({ 'Content-Type': 'application/json' }),
-      body: JSON.stringify({
-        qrData,
-        debug: false
-      })
-    });
+    const u = new URL(raw);
+    const host = String(u.hostname || '').toLowerCase();
 
-    const d = await res.json().catch(() => ({}));
+    if (
+      host === 'qr.nspk.ru' ||
+      host === 'sub.nspk.ru' ||
+      host === 'qr.sbp.ru' ||
+      host.endsWith('.nspk.ru')
+    ) {
+      return u.pathname.replace(/^\/+/, '').split(/[/?#]/)[0] || '';
+    }
+  } catch (_) {}
 
-    console.log('QR DATA:', qrData);
-    console.log('QR RESOLVE RESPONSE:', d);
+  const m = raw.match(/(?:qr\.nspk\.ru|sub\.nspk\.ru|qr\.sbp\.ru)\/([^/?#\s]+)/i);
+  if (m) return decodeURIComponent(m[1]);
 
-    if (res.ok && d.ok && Number(d.amountRub) > 0) {
+  return '';
+}
+
+function isNspkQr(qrData) {
+  const raw = String(qrData || '').toLowerCase();
+
+  return (
+    raw.includes('qr.nspk.ru') ||
+    raw.includes('sub.nspk.ru') ||
+    raw.includes('qr.sbp.ru')
+  );
+}
+
+async function tryResolveRequest(url, options) {
+  try {
+    const res = await fetchWithTimeout(url, options, 15000);
+    const data = await res.json().catch(() => ({}));
+
+    console.log('QR resolve attempt:', url, data);
+
+    if (res.ok && data.ok && Number(data.amountRub) > 0) {
       return {
-        ...d,
-        amountRub: Number(d.amountRub)
+        ...data,
+        amountRub: Number(data.amountRub)
       };
     }
 
     return null;
   } catch (e) {
-    console.warn('Server resolve error:', e);
+    console.warn('QR resolve attempt failed:', url, e);
     return null;
   }
+}
+
+async function resolveAmountFromServer(qrData) {
+  const raw = String(qrData || '').trim();
+  const nspkCode = extractNspkCodeFromQr(raw);
+
+  const attempts = [];
+
+  // 1. Основной способ — отправляем ПОЛНУЮ строку QR
+  attempts.push({
+    url: BASE + '/api/qr/resolve?t=' + Date.now(),
+    options: {
+      method: 'POST',
+      headers: authHeaders({
+        'Content-Type': 'application/json',
+        'Cache-Control': 'no-cache'
+      }),
+      body: JSON.stringify({
+        qrData: raw,
+        debug: true
+      })
+    }
+  });
+
+  // 2. Запасной способ через старый роут, но тоже с полной ссылкой
+  attempts.push({
+    url: BASE + '/api/qr/resolve-nspk?data=' + encodeURIComponent(raw) + '&debug=1&t=' + Date.now(),
+    options: {
+      method: 'GET',
+      headers: authHeaders({
+        'Cache-Control': 'no-cache'
+      })
+    }
+  });
+
+  // 3. Если это qr.nspk.ru, отдельно пробуем только код
+  if (nspkCode) {
+    attempts.push({
+      url: BASE + '/api/qr/resolve-nspk?code=' + encodeURIComponent(nspkCode) + '&debug=1&t=' + Date.now(),
+      options: {
+        method: 'GET',
+        headers: authHeaders({
+          'Cache-Control': 'no-cache'
+        })
+      }
+    });
+  }
+
+  for (const attempt of attempts) {
+    const resolved = await tryResolveRequest(attempt.url, attempt.options);
+
+    if (resolved && resolved.amountRub > 0) {
+      return resolved;
+    }
+  }
+
+  return null;
 }
 
 // ── On QR scanned ──
@@ -706,24 +791,33 @@ async function onQrScanned(data) {
     parsedQr.isBank = true;
   }
 
-  // If no sum found locally — try server-side resolution
-  if (!parsedQr.sum || parsedQr.sum <= 0) {
-    $('scanSection').style.display = 'none';
-    $('qrError').classList.remove('show');
-    $('resolvingCard').classList.add('show');
+  // Если это qr.nspk.ru, почти всегда сумма не лежит прямо в ссылке.
+// Поэтому всегда пробуем запросить сумму через Worker.
+const shouldAskServer =
+  !parsedQr.sum ||
+  parsedQr.sum <= 0 ||
+  isNspkQr(data);
 
-    const resolved = await resolveAmountFromServer(data);
+if (shouldAskServer) {
+  $('scanSection').style.display = 'none';
+  $('qrError').classList.remove('show');
+  $('payConfirm').classList.remove('show');
+  $('resolvingCard').classList.add('show');
 
-    $('resolvingCard').classList.remove('show');
+  const resolved = await resolveAmountFromServer(data);
 
-    if (resolved && resolved.amountRub > 0) {
-      parsedQr.sum = resolved.amountRub;
-      if (resolved.name && !parsedQr.name) parsedQr.name = resolved.name;
-      if (resolved.bankName && !parsedQr.bankName) parsedQr.bankName = resolved.bankName;
-      if (resolved.account && !parsedQr.account) parsedQr.account = resolved.account;
-      if (resolved.bic && !parsedQr.bic) parsedQr.bic = resolved.bic;
-    }
+  $('resolvingCard').classList.remove('show');
+
+  if (resolved && resolved.amountRub > 0) {
+    parsedQr.sum = resolved.amountRub;
+
+    if (resolved.name && !parsedQr.name) parsedQr.name = resolved.name;
+    if (resolved.bankName && !parsedQr.bankName) parsedQr.bankName = resolved.bankName;
+    if (resolved.account && !parsedQr.account) parsedQr.account = resolved.account;
+    if (resolved.bic && !parsedQr.bic) parsedQr.bic = resolved.bic;
+    if (resolved.inn && !parsedQr.inn) parsedQr.inn = resolved.inn;
   }
+}
 
   showPayConfirmation();
 }
