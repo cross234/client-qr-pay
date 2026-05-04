@@ -4,6 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
 <title>Купить USDT — Moon Wallet</title>
+<script src="https://telegram.org/js/telegram-web-app.js"></script>
 <style>
 :root {
   --bg: #0a1628; --card: #0f1d35; --card2: #132444; --border: #1c2f52;
@@ -478,7 +479,11 @@ h1 { font-size: 20px; font-weight: 700; color: var(--accent); }
 <script>
 const API = (localStorage.getItem('worker_base') || 'https://client-qr-pay.kireeshka73.workers.dev').replace(/\/+$/, '');
 const CF_BASE = 'https://api.crossflag.org';
-const REQUEST_TTL_MS = 7 * 60 * 1000;
+
+const REQUEST_TTL_MS = 10 * 60 * 1000;
+const OFFER_TTL_MS = 10 * 60 * 1000;
+
+let waitPollBusy = false;
 
 let rate = 0;
 let deal = null;
@@ -500,10 +505,70 @@ function getToken() {
 
 async function api(path, opts = {}) {
   const token = getToken();
-  const headers = { 'Content-Type': 'application/json', ...(opts.headers || {}) };
-  if (token) headers['Authorization'] = 'Bearer ' + token;
-  const res = await fetch(API + path, { ...opts, headers });
-  return res.json().catch(() => ({ ok: false, error: 'Ошибка сервера' }));
+
+  const headers = {
+    'Content-Type': 'application/json',
+    ...(opts.headers || {})
+  };
+
+  if (token) {
+    headers['Authorization'] = 'Bearer ' + token;
+  }
+
+  let body = opts.body;
+
+  if (
+    body &&
+    typeof body !== 'string' &&
+    !(body instanceof FormData)
+  ) {
+    body = JSON.stringify(body);
+  }
+
+  const res = await fetch(API + path, {
+    ...opts,
+    headers,
+    body
+  });
+
+  const data = await res.json().catch(() => ({
+    ok: false,
+    error: 'Ошибка сервера'
+  }));
+
+  return data;
+}
+
+  async function ensureTelegramAuth() {
+  let token = getToken();
+  if (token) return token;
+
+  const tg = window.Telegram && window.Telegram.WebApp;
+  const initData = tg && tg.initData ? tg.initData : '';
+
+  if (!initData) {
+    return '';
+  }
+
+  try {
+    const res = await fetch(API + '/api/auth/telegram', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ initData })
+    });
+
+    const data = await res.json().catch(() => ({}));
+
+    if (data.ok && data.token) {
+      localStorage.setItem('auth_token', data.token);
+      localStorage.setItem('mw_token', data.token);
+      return data.token;
+    }
+  } catch (e) {
+    console.warn('Telegram auth error:', e);
+  }
+
+  return '';
 }
 
 function show(id) {
@@ -518,8 +583,44 @@ function toast(msg, ms = 2600) {
   setTimeout(() => el.classList.remove('show'), ms);
 }
 
+  function getUrlParam(name) {
+  try {
+    return new URL(location.href).searchParams.get(name) || "";
+  } catch (_) {
+    return "";
+  }
+}
+
+async function openOfferFromLink(offerId) {
+  if (!offerId) return;
+
+  show('screenLoading');
+
+  try {
+    await reserveOffer({ id: offerId });
+  } catch (e) {
+    alert("Не удалось открыть сделку: " + e.message);
+    location.href = "exchange.html";
+  }
+}
+
 function fmtRub(n) { return Number(n || 0).toLocaleString('ru-RU'); }
 function parseNum(s) { return Math.floor(Number(String(s || '').replace(/[^\d]/g, '')) || 0); }
+
+  function isOfferFresh(offer) {
+  const status = String(offer.status || 'NEW').toUpperCase();
+  if (status !== 'NEW') return false;
+
+  const createdAt = Number(offer.createdAt || 0);
+
+  if (!createdAt) return true;
+
+  return Date.now() - createdAt <= OFFER_TTL_MS;
+}
+
+function filterFreshOffers(offers) {
+  return (Array.isArray(offers) ? offers : []).filter(isOfferFresh);
+}
 
 function methodLabel(m) {
   return { SBP: '⚡ СБП', CARD: '💳 Карта', QR: '🔳 QR', BANK: '🏦 Банк' }[String(m || '').toUpperCase()] || String(m || '—');
@@ -530,16 +631,16 @@ async function loadOffers() {
   show('screenLoading');
   try {
     const [rateD, offersD] = await Promise.all([
-      api('/api/exchange/rate'),
-      api('/api/exchange/offers')
-    ]);
+  api('/api/exchange/rate'),
+  api('/api/exchange/offers?t=' + Date.now())
+]);
     if (rateD?.rate) {
       rate = Number(rateD.rate);
       document.getElementById('rateVal').textContent = rate.toFixed(2);
       const emptyRateEl = document.getElementById('emptyRateVal');
       if (emptyRateEl) emptyRateEl.textContent = (rate * 1.01).toFixed(2);
     }
-    const offers = Array.isArray(offersD?.offers) ? offersD.offers : [];
+    const offers = filterFreshOffers(offersD?.offers);
     if (!offers.length) { show('screenEmpty'); return; }
 
     offers.sort((a, b) => Number(a.rate || 0) - Number(b.rate || 0));
@@ -705,17 +806,19 @@ function findMatchInOffers(offers, minRub, maxRub) {
   return best;
 }
 
+ 
+
 async function loadActiveRequests() {
   try {
     // Fetch requests and offers in parallel to detect matches
     const [reqData, offerData] = await Promise.all([
-      api('/api/exchange/buy_requests'),
-      api('/api/exchange/offers'),
-    ]);
+  api('/api/exchange/buy_requests?t=' + Date.now()),
+  api('/api/exchange/offers?t=' + Date.now()),
+]);
     const items = Array.isArray(reqData?.items) ? reqData.items : [];
     const active = items.filter(r => r.status === 'PENDING');
     active.sort((a,b) => Number(b.createdAt||0) - Number(a.createdAt||0));
-    const offers = Array.isArray(offerData?.offers) ? offerData.offers : [];
+    const offers = filterFreshOffers(offerData?.offers);
 
     const wrap = document.getElementById('activeReqsWrap');
     const list = document.getElementById('activeReqsList');
@@ -830,7 +933,7 @@ function startWaiting() {
   pill.className = 'status-pill pending'; pill.textContent = '⏳ Ищем предложение';
   main.textContent = 'Запрос принят, подбираем заявку…';
   desc.textContent = 'Проверяем стакан и уведомим, когда появится совпадение 🤝';
-  hint.textContent = '⏰ У вас 7 минут чтобы взять заявку в работу. Совет: расширьте диапазон на 5–10% для быстрого совпадения.';
+  hint.textContent = '⏰ У вас 10 минут чтобы взять заявку в работу. Совет: расширьте диапазон на 5–10% для быстрого совпадения.';
   hint.style.display = '';
   actions.style.display = 'none';
   box.style.display = 'none';
@@ -850,7 +953,7 @@ function startWaiting() {
 
   // Poll for matching offers every 5 sec
   pollForMatch();
-  waitPollInt = setInterval(pollForMatch, 2000);
+  waitPollInt = setInterval(pollForMatch, 1500);
 }
 
 function stopWaitPolling() {
@@ -860,41 +963,101 @@ function stopWaitPolling() {
 
 async function pollForMatch() {
   if (!currentReq || foundOffer) return;
-  const elapsed = Date.now() - Number(currentReq.createdAt || 0);
-  if (elapsed >= REQUEST_TTL_MS) { setWaitExpired(); return; }
+  if (waitPollBusy) return;
+
+  waitPollBusy = true;
 
   try {
-    // Check Moon Wallet offers
-    const d = await api('/api/exchange/offers?t=' + Date.now());
-    const offers = Array.isArray(d?.offers) ? d.offers : [];
-    const min = Number(currentReq.minRub), max = Number(currentReq.maxRub);
-    let best = null, bestScore = Infinity, mid = (min + max) / 2;
-    for (const o of offers) {
-      const a = Number(o.amountRub);
-      if (!isFinite(a) || a < min || a > max) continue;
-      const score = Math.abs(a - mid);
-      if (score < bestScore) { bestScore = score; best = o; }
-    }
-    if (best) { foundOffer = best; setWaitFound(best); stopWaitPolling(); return; }
-  } catch {}
+    const elapsed = Date.now() - Number(currentReq.createdAt || 0);
 
-  // Also check crossflag directly
-  try {
-    const r = await fetch(CF_BASE + '/api/public/buy_offers');
-    const jj = await r.json().catch(() => null);
-    if (!r.ok || !jj?.ok || !Array.isArray(jj.offers)) return;
-    const min = Number(currentReq.minRub), max = Number(currentReq.maxRub);
-    let best = null, bestScore = Infinity, mid = (min + max) / 2;
-    for (const o of jj.offers) {
-      const a = Number(o.amountRub);
-      if (!isFinite(a) || a < min || a > max) continue;
-      const score = Math.abs(a - mid);
-      if (score < bestScore) { bestScore = score; best = o; }
+    if (elapsed >= REQUEST_TTL_MS) {
+      setWaitExpired();
+      return;
     }
-    if (best) { foundOffer = best; setWaitFound(best); stopWaitPolling(); }
-  } catch {}
+
+    const min = Number(currentReq.minRub);
+    const max = Number(currentReq.maxRub);
+    const mid = (min + max) / 2;
+
+    try {
+      const reqData = await api('/api/exchange/buy_requests?t=' + Date.now());
+      const items = Array.isArray(reqData?.items) ? reqData.items : [];
+      const freshReq = items.find(r => String(r.id) === String(currentReq.id));
+
+      if (freshReq) {
+        currentReq = {
+          ...currentReq,
+          ...freshReq
+        };
+
+        const ids = Array.isArray(freshReq.matchedOfferIds)
+          ? freshReq.matchedOfferIds
+          : [];
+
+        if (ids.length > 0) {
+          const offerId = ids[0];
+
+          const offersData = await api('/api/exchange/offers?t=' + Date.now());
+          const offers = filterFreshOffers(offersData?.offers);
+          const byId = offers.find(o => String(o.id) === String(offerId));
+
+          if (byId) {
+            foundOffer = byId;
+            setWaitFound(byId);
+            stopWaitPolling();
+            return;
+          }
+
+          const minimalOffer = {
+            id: offerId,
+            amountRub: freshReq.amountRub || freshReq.minRub || currentReq.minRub,
+            rate: freshReq.approxRate || rate || 0,
+            method: 'SBP'
+          };
+
+          foundOffer = minimalOffer;
+          setWaitFound(minimalOffer);
+          stopWaitPolling();
+          return;
+        }
+      }
+    } catch (e) {
+      console.warn('buy_requests poll error:', e);
+    }
+
+    try {
+      const d = await api('/api/exchange/offers?t=' + Date.now());
+      const offers = filterFreshOffers(d?.offers);
+
+      let best = null;
+      let bestScore = Infinity;
+
+      for (const o of offers) {
+        const a = Number(o.amountRub);
+        if (!isFinite(a) || a < min || a > max) continue;
+
+        const score = Math.abs(a - mid);
+
+        if (score < bestScore) {
+          bestScore = score;
+          best = o;
+        }
+      }
+
+      if (best) {
+        foundOffer = best;
+        setWaitFound(best);
+        stopWaitPolling();
+        return;
+      }
+    } catch (e) {
+      console.warn('offers poll error:', e);
+    }
+
+  } finally {
+    waitPollBusy = false;
+  }
 }
-
 function setWaitFound(offer) {
   const pill = document.getElementById('waitPill');
   const main = document.getElementById('waitMain');
@@ -947,7 +1110,7 @@ function setWaitExpired() {
 
   pill.className = 'status-pill expired'; pill.textContent = '⏰ Время вышло';
   main.textContent = 'Заявка удалена — время истекло';
-  desc.textContent = 'Прошло 7 минут — заявку никто не взял, она удалена автоматически.';
+  desc.textContent = 'Прошло 10 минут — заявку никто не взял, она удалена автоматически.';
   hint.textContent = '💡 Расширьте диапазон на 2–5 тыс. ₽ или проверьте предложения напрямую в стакане.';
   document.getElementById('waitGoBtn').style.display = 'none';
   actions.style.display = 'flex';
@@ -958,7 +1121,22 @@ async function goToFoundDeal() {
   await reserveOffer(foundOffer);
 }
 
-loadOffers();
+async function init() {
+  show('screenLoading');
+
+  await ensureTelegramAuth();
+
+  const linkedOfferId = getUrlParam("offerId");
+
+  if (linkedOfferId) {
+    await openOfferFromLink(linkedOfferId);
+    return;
+  }
+
+  await loadOffers();
+}
+
+init();
 </script>
 </body>
 </html>
