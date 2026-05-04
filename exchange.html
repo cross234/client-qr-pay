@@ -478,35 +478,77 @@ h1 { font-size: 20px; font-weight: 700; color: var(--accent); }
 
 <script>
 const API = (localStorage.getItem('worker_base') || 'https://client-qr-pay.kireeshka73.workers.dev').replace(/\/+$/, '');
-const CF_BASE = 'https://api.crossflag.org';
 
 const REQUEST_TTL_MS = 10 * 60 * 1000;
 const OFFER_TTL_MS = 10 * 60 * 1000;
 
-let waitPollBusy = false;
-
 let rate = 0;
 let deal = null;
-  let offersAutoRefreshInt = null;
-  let waitPollBusy = false;
 
-let rate = 0;
-let deal = null;
-let currentScreenId = 'screenLoading';
 let timerInt = null;
 let keepAliveInt = null;
-let currentReq = null;   // active buy request {id, minRub, maxRub, count, createdAt}
+
+let currentReq = null;
+let foundOffer = null;
+
 let waitPollInt = null;
 let waitTimerInt = null;
-let foundOffer = null;   // matching offer found while waiting
+let waitPollBusy = false;
+
+let offersAutoRefreshInt = null;
+let offersRefreshBusy = false;
+let currentScreenId = 'screenLoading';
 
 function getToken() {
   try {
     return localStorage.getItem('auth_token') ||
            localStorage.getItem('mw_token') ||
            sessionStorage.getItem('auth_token') ||
-           sessionStorage.getItem('mw_token') || '';
-  } catch { return ''; }
+           sessionStorage.getItem('mw_token') ||
+           '';
+  } catch {
+    return '';
+  }
+}
+
+function saveToken(token) {
+  if (!token) return;
+
+  try {
+    localStorage.setItem('auth_token', token);
+    localStorage.setItem('mw_token', token);
+    sessionStorage.setItem('auth_token', token);
+    sessionStorage.setItem('mw_token', token);
+  } catch {}
+}
+
+async function ensureTelegramAuth() {
+  let token = getToken();
+  if (token) return token;
+
+  const tg = window.Telegram && window.Telegram.WebApp;
+  const initData = tg && tg.initData ? tg.initData : '';
+
+  if (!initData) return '';
+
+  try {
+    const res = await fetch(API + '/api/auth/telegram', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ initData })
+    });
+
+    const data = await res.json().catch(() => ({}));
+
+    if (data.ok && data.token) {
+      saveToken(data.token);
+      return data.token;
+    }
+  } catch (e) {
+    console.warn('Telegram auth error:', e);
+  }
+
+  return '';
 }
 
 async function api(path, opts = {}) {
@@ -523,11 +565,7 @@ async function api(path, opts = {}) {
 
   let body = opts.body;
 
-  if (
-    body &&
-    typeof body !== 'string' &&
-    !(body instanceof FormData)
-  ) {
+  if (body && typeof body !== 'string' && !(body instanceof FormData)) {
     body = JSON.stringify(body);
   }
 
@@ -537,44 +575,10 @@ async function api(path, opts = {}) {
     body
   });
 
-  const data = await res.json().catch(() => ({
+  return res.json().catch(() => ({
     ok: false,
     error: 'Ошибка сервера'
   }));
-
-  return data;
-}
-
-  async function ensureTelegramAuth() {
-  let token = getToken();
-  if (token) return token;
-
-  const tg = window.Telegram && window.Telegram.WebApp;
-  const initData = tg && tg.initData ? tg.initData : '';
-
-  if (!initData) {
-    return '';
-  }
-
-  try {
-    const res = await fetch(API + '/api/auth/telegram', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ initData })
-    });
-
-    const data = await res.json().catch(() => ({}));
-
-    if (data.ok && data.token) {
-      localStorage.setItem('auth_token', data.token);
-      localStorage.setItem('mw_token', data.token);
-      return data.token;
-    }
-  } catch (e) {
-    console.warn('Telegram auth error:', e);
-  }
-
-  return '';
 }
 
 function show(id) {
@@ -597,11 +601,12 @@ function startOffersAutoRefresh() {
     if (currentScreenId === 'screenOffers' || currentScreenId === 'screenEmpty') {
       loadOffers(true);
     }
-  }, 2000);
+  }, 1500);
 }
 
 function stopOffersAutoRefresh() {
   clearInterval(offersAutoRefreshInt);
+  offersAutoRefreshInt = null;
 }
 
 function toast(msg, ms = 2600) {
@@ -611,32 +616,34 @@ function toast(msg, ms = 2600) {
   setTimeout(() => el.classList.remove('show'), ms);
 }
 
-  function getUrlParam(name) {
+function getUrlParam(name) {
   try {
-    return new URL(location.href).searchParams.get(name) || "";
-  } catch (_) {
-    return "";
+    return new URL(location.href).searchParams.get(name) || '';
+  } catch {
+    return '';
   }
 }
 
-async function openOfferFromLink(offerId) {
-  if (!offerId) return;
-
-  show('screenLoading');
-
-  try {
-    await reserveOffer({ id: offerId });
-  } catch (e) {
-    alert("Не удалось открыть сделку: " + e.message);
-    location.href = "exchange.html";
-  }
+function fmtRub(n) {
+  return Number(n || 0).toLocaleString('ru-RU');
 }
 
-function fmtRub(n) { return Number(n || 0).toLocaleString('ru-RU'); }
-function parseNum(s) { return Math.floor(Number(String(s || '').replace(/[^\d]/g, '')) || 0); }
+function parseNum(s) {
+  return Math.floor(Number(String(s || '').replace(/[^\d]/g, '')) || 0);
+}
 
-  function isOfferFresh(offer) {
+function methodLabel(m) {
+  return {
+    SBP: '⚡ СБП',
+    CARD: '💳 Карта',
+    QR: '🔳 QR',
+    BANK: '🏦 Банк'
+  }[String(m || '').toUpperCase()] || String(m || '—');
+}
+
+function isOfferFresh(offer) {
   const status = String(offer.status || 'NEW').toUpperCase();
+
   if (status !== 'NEW') return false;
 
   const createdAt = Number(offer.createdAt || 0);
@@ -650,35 +657,63 @@ function filterFreshOffers(offers) {
   return (Array.isArray(offers) ? offers : []).filter(isOfferFresh);
 }
 
-function methodLabel(m) {
-  return { SBP: '⚡ СБП', CARD: '💳 Карта', QR: '🔳 QR', BANK: '🏦 Банк' }[String(m || '').toUpperCase()] || String(m || '—');
+async function openOfferFromLink(offerId) {
+  if (!offerId) return;
+
+  show('screenLoading');
+
+  try {
+    await reserveOffer({ id: offerId });
+  } catch (e) {
+    alert('Не удалось открыть сделку: ' + e.message);
+    location.href = 'exchange.html';
+  }
 }
 
-// ══ Offers ══════════════════════════════════════════════
+// ══ Offers ═══════════════════════════════════════
+
 async function loadOffers(silent = false) {
-  if (!silent) show('screenLoading');
+  if (offersRefreshBusy) return;
+
+  offersRefreshBusy = true;
+
+  if (!silent) {
+    show('screenLoading');
+  }
+
   try {
     const [rateD, offersD] = await Promise.all([
-  api('/api/exchange/rate'),
-  api('/api/exchange/offers?t=' + Date.now())
-]);
+      api('/api/exchange/rate?t=' + Date.now()),
+      api('/api/exchange/offers?t=' + Date.now())
+    ]);
+
     if (rateD?.rate) {
       rate = Number(rateD.rate);
       document.getElementById('rateVal').textContent = rate.toFixed(2);
+
       const emptyRateEl = document.getElementById('emptyRateVal');
       if (emptyRateEl) emptyRateEl.textContent = (rate * 1.01).toFixed(2);
     }
+
     const offers = filterFreshOffers(offersD?.offers);
-    if (!offers.length) { show('screenEmpty'); return; }
+
+    if (!offers.length) {
+      show('screenEmpty');
+      return;
+    }
 
     offers.sort((a, b) => Number(a.rate || 0) - Number(b.rate || 0));
+
     const list = document.getElementById('offersList');
     list.innerHTML = '';
+
     offers.forEach(o => {
       const r = Number(o.rate || rate || 0);
       const usdt = r > 0 ? (Number(o.amountRub || 0) / r).toFixed(2) : '—';
+
       const el = document.createElement('div');
       el.className = 'offer-card';
+
       el.innerHTML =
         '<div class="offer-top">' +
           '<div><div class="offer-amount-rub">' + fmtRub(o.amountRub) + ' ₽</div>' +
@@ -689,38 +724,49 @@ async function loadOffers(silent = false) {
           '<div class="offer-rate">Курс: <em>' + r.toFixed(2) + ' ₽</em></div>' +
           '<button class="buy-btn">Купить</button>' +
         '</div>';
+
       el.addEventListener('click', () => reserveOffer(o));
       list.appendChild(el);
     });
+
     show('screenOffers');
-  } catch(e) {
+  } catch (e) {
+    console.warn('loadOffers error:', e);
     show('screenEmpty');
+  } finally {
+    offersRefreshBusy = false;
   }
 }
 
 async function reserveOffer(offer) {
   show('screenLoading');
+
   try {
     const d = await api('/api/exchange/reserve', {
       method: 'POST',
-      body: JSON.stringify({ id: offer.id, notifyOpen: true })
+      body: { id: offer.id, notifyOpen: true }
     });
+
     if (!d?.ok) {
       toast(d?.error?.includes('reserved') ? 'Заявка уже занята' : (d?.error || 'Ошибка резервирования'));
       await loadOffers();
       return;
     }
+
     const o = d.offer || {};
     const r = Number(o.rate || offer.rate || rate || 0);
-    const usdt = r > 0 ? (Number(o.amountRub || offer.amountRub || 0) / r).toFixed(2) : '—';
+    const amountRub = Number(o.amountRub || offer.amountRub || 0);
+    const usdt = r > 0 ? (amountRub / r).toFixed(2) : '—';
+
     deal = {
-      offerId: offer.id,
+      offerId: o.id || offer.id,
       reserveId: d.reserveId,
       expiresAt: d.expiresAt || (Date.now() + 20 * 60 * 1000),
-      amountRub: o.amountRub || offer.amountRub,
-      rate: r, usdt,
-      payBank: o.payBank || '',
-      payRequisite: o.payRequisite || '',
+      amountRub,
+      rate: r,
+      usdt,
+      payBank: o.payBank || offer.payBank || '',
+      payRequisite: o.payRequisite || offer.payRequisite || '',
       method: o.method || offer.method || '',
       address: d.address || ''
     };
@@ -730,29 +776,38 @@ async function reserveOffer(offer) {
 
     const req = document.getElementById('requisites');
     req.innerHTML = '';
+
     const rows = [];
+
     if (deal.payBank) rows.push(['Банк', deal.payBank]);
+
     if (deal.payRequisite) {
       const label = deal.method === 'SBP' ? 'Номер телефона' : deal.method === 'QR' ? 'Реквизиты' : 'Номер карты';
       rows.push([label, deal.payRequisite]);
     }
+
     rows.push(['Способ', methodLabel(deal.method)]);
+
     rows.forEach(([lbl, val]) => {
       const row = document.createElement('div');
       row.className = 'req-row';
+
       const safeVal = String(val).replace(/'/g, '&#39;');
-      row.innerHTML = '<span class="req-label">' + lbl + '</span>' +
+
+      row.innerHTML =
+        '<span class="req-label">' + lbl + '</span>' +
         '<span class="req-value"><span>' + val + '</span>' +
         '<button class="copy-btn" onclick="copyText(\'' + safeVal + '\')">📋</button></span>';
+
       req.appendChild(row);
     });
 
     document.getElementById('paidBtn').disabled = false;
     document.getElementById('paidBtn').textContent = '✅ Я перевёл деньги';
+
     startTimer();
-    startKeepalive();
     show('screenDeal');
-  } catch(e) {
+  } catch (e) {
     toast('Ошибка: ' + (e.message || 'попробуйте ещё раз'));
     await loadOffers();
   }
@@ -763,94 +818,157 @@ function startTimer() {
   tick();
   timerInt = setInterval(tick, 1000);
 }
+
 function tick() {
   if (!deal) return;
-  const left = Math.max(0, deal.expiresAt - Date.now());
-  const m = Math.floor(left / 60000), s = Math.floor((left % 60000) / 1000);
-  const el = document.getElementById('timerEl');
-  el.textContent = String(m).padStart(2,'0') + ':' + String(s).padStart(2,'0');
-  el.className = 'timer' + (m < 2 ? ' urgent' : m < 5 ? ' warn' : '');
-  if (left === 0) { clearInterval(timerInt); clearInterval(keepAliveInt); toast('Время вышло'); setTimeout(loadOffers, 1800); }
-}
 
-function startKeepalive() {
-  clearInterval(keepAliveInt);
-  keepAliveInt = setInterval(() => {
-    if (!deal) return;
-    api('/api/exchange/reserve', { method: 'POST', body: JSON.stringify({ id: deal.offerId, reserveId: deal.reserveId }) }).catch(() => {});
-  }, 30000);
+  const left = Math.max(0, deal.expiresAt - Date.now());
+  const m = Math.floor(left / 60000);
+  const s = Math.floor((left % 60000) / 1000);
+
+  const el = document.getElementById('timerEl');
+  el.textContent = String(m).padStart(2, '0') + ':' + String(s).padStart(2, '0');
+  el.className = 'timer' + (m < 2 ? ' urgent' : m < 5 ? ' warn' : '');
+
+  if (left === 0) {
+    clearInterval(timerInt);
+    clearInterval(keepAliveInt);
+    toast('Время вышло');
+    setTimeout(loadOffers, 1800);
+  }
 }
 
 async function markPaid() {
   if (!deal) return;
+
   const btn = document.getElementById('paidBtn');
-  btn.disabled = true; btn.textContent = 'Отправляем…';
+  btn.disabled = true;
+  btn.textContent = 'Отправляем…';
+
   try {
-    const d = await api('/api/exchange/mark_paid', { method: 'POST', body: JSON.stringify({ id: deal.offerId, reserveId: deal.reserveId }) });
-    clearInterval(timerInt); clearInterval(keepAliveInt);
-    // Redirect to proof upload page
+    const d = await api('/api/exchange/mark_paid', {
+      method: 'POST',
+      body: {
+        id: deal.offerId,
+        reserveId: deal.reserveId
+      }
+    });
+
+    if (!d?.ok) {
+      btn.disabled = false;
+      btn.textContent = '✅ Я перевёл деньги';
+      toast(d?.error || 'Ошибка');
+      return;
+    }
+
+    clearInterval(timerInt);
+    clearInterval(keepAliveInt);
+
     const qs = new URLSearchParams({
       offerId: deal.offerId,
       reserveId: deal.reserveId,
       amountRub: String(deal.amountRub || ''),
-      usdt: String(deal.usdt || ''),
+      usdt: String(deal.usdt || '')
     });
+
     window.location.href = 'exchange-proof.html?' + qs.toString();
-  } catch(e) {
-    btn.disabled = false; btn.textContent = '✅ Я перевёл деньги';
+  } catch (e) {
+    btn.disabled = false;
+    btn.textContent = '✅ Я перевёл деньги';
     toast('Ошибка: ' + (e.message || 'попробуйте ещё раз'));
   }
 }
 
 async function cancelDeal() {
-  if (!deal) { await loadOffers(); return; }
+  if (!deal) {
+    await loadOffers();
+    return;
+  }
+
   if (!confirm('Отменить сделку?')) return;
-  try { await api('/api/exchange/cancel', { method: 'POST', body: JSON.stringify({ id: deal.offerId, reserveId: deal.reserveId }) }); } catch {}
-  clearInterval(timerInt); clearInterval(keepAliveInt);
-  deal = null; await loadOffers();
+
+  try {
+    await api('/api/exchange/cancel', {
+      method: 'POST',
+      body: {
+        id: deal.offerId,
+        reserveId: deal.reserveId
+      }
+    });
+  } catch {}
+
+  clearInterval(timerInt);
+  clearInterval(keepAliveInt);
+
+  deal = null;
+  await loadOffers();
 }
 
-function copyText(t) { navigator.clipboard?.writeText(t).catch(()=>{}); toast('Скопировано!'); }
-function startOver() { clearInterval(timerInt); clearInterval(keepAliveInt); deal = null; loadOffers(); }
+function copyText(t) {
+  navigator.clipboard?.writeText(t).catch(() => {});
+  toast('Скопировано!');
+}
 
-// ══ Request form ═════════════════════════════════════════
+function startOver() {
+  clearInterval(timerInt);
+  clearInterval(keepAliveInt);
+  deal = null;
+  loadOffers();
+}
+
+// ══ Request form ════════════════════════════════
+
 async function showRequestScreen() {
   stopWaitPolling();
   currentReq = null;
   foundOffer = null;
+
   show('screenRequest');
   await loadActiveRequests();
 }
 
 function findMatchInOffers(offers, minRub, maxRub) {
-  let best = null, bestScore = Infinity;
+  let best = null;
+  let bestScore = Infinity;
   const mid = (Number(minRub) + Number(maxRub)) / 2;
+
   for (const o of offers) {
     const a = Number(o.amountRub);
+
     if (!isFinite(a) || a < minRub || a > maxRub) continue;
+
     const score = Math.abs(a - mid);
-    if (score < bestScore) { bestScore = score; best = o; }
+
+    if (score < bestScore) {
+      bestScore = score;
+      best = o;
+    }
   }
+
   return best;
 }
 
- 
-
 async function loadActiveRequests() {
   try {
-    // Fetch requests and offers in parallel to detect matches
     const [reqData, offerData] = await Promise.all([
-  api('/api/exchange/buy_requests?t=' + Date.now()),
-  api('/api/exchange/offers?t=' + Date.now()),
-]);
+      api('/api/exchange/buy_requests?t=' + Date.now()),
+      api('/api/exchange/offers?t=' + Date.now())
+    ]);
+
     const items = Array.isArray(reqData?.items) ? reqData.items : [];
-    const active = items.filter(r => r.status === 'PENDING');
-    active.sort((a,b) => Number(b.createdAt||0) - Number(a.createdAt||0));
+    const active = items.filter(r => String(r.status || '').toUpperCase() === 'PENDING');
     const offers = filterFreshOffers(offerData?.offers);
+
+    active.sort((a, b) => Number(b.createdAt || 0) - Number(a.createdAt || 0));
 
     const wrap = document.getElementById('activeReqsWrap');
     const list = document.getElementById('activeReqsList');
-    if (!active.length) { wrap.style.display = 'none'; return; }
+
+    if (!active.length) {
+      wrap.style.display = 'none';
+      return;
+    }
+
     wrap.style.display = '';
     list.innerHTML = '';
 
@@ -858,21 +976,23 @@ async function loadActiveRequests() {
       const elapsed = Date.now() - Number(req.createdAt || 0);
       const msLeft = Math.max(0, REQUEST_TTL_MS - elapsed);
       const pct = Math.max(0, Math.min(100, (msLeft / REQUEST_TTL_MS) * 100));
-      const m = Math.floor(msLeft / 60000), s = Math.floor((msLeft % 60000) / 1000);
-      const timeStr = msLeft <= 0 ? 'Время вышло' : m + ':' + String(s).padStart(2,'0');
+      const m = Math.floor(msLeft / 60000);
+      const s = Math.floor((msLeft % 60000) / 1000);
+      const timeStr = msLeft <= 0 ? 'Время вышло' : m + ':' + String(s).padStart(2, '0');
       const danger = msLeft < 2 * 60 * 1000;
 
       const matchedOffer = findMatchInOffers(offers, Number(req.minRub), Number(req.maxRub));
 
       const el = document.createElement('div');
       el.className = 'req-item';
+
       el.innerHTML =
         '<div class="req-item-top">' +
           '<div class="req-range">' + fmtRub(req.minRub) + ' — ' + fmtRub(req.maxRub) + ' ₽</div>' +
           '<span class="req-chip">Активен</span>' +
         '</div>' +
         '<div class="req-meta">' +
-          '<span class="req-meta-item">Ордеров: <b>' + (req.matchedOffersCount||0) + '/' + (req.count||1) + '</b></span>' +
+          '<span class="req-meta-item">Ордеров: <b>' + (req.matchedOffersCount || 0) + '/' + (req.count || 1) + '</b></span>' +
           (req.approxRate ? '<span class="req-meta-item">Курс: <b>≈' + Number(req.approxRate).toFixed(2) + ' ₽</b></span>' : '') +
         '</div>' +
         '<div class="timer-bar' + (danger ? ' danger' : '') + '">' +
@@ -881,7 +1001,7 @@ async function loadActiveRequests() {
           '<div class="timer-bar-track"><div class="timer-bar-fill" style="width:' + pct + '%"></div></div>' +
         '</div>' +
         (matchedOffer
-          ? '<div class="found-anim" style="margin-bottom:8px"><svg width="16" height="16" viewBox="0 0 24 24" fill="none"><path d="M9 12l2 2 4-4" stroke="rgba(74,222,128,.95)" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/><circle cx="12" cy="12" r="10" stroke="rgba(74,222,128,.95)" stroke-width="2"/></svg><span class="found-text">Найдено ' + fmtRub(matchedOffer.amountRub) + ' ₽!</span></div>'
+          ? '<div class="found-anim" style="margin-bottom:8px"><span class="found-text">Найдено ' + fmtRub(matchedOffer.amountRub) + ' ₽!</span></div>'
           : '<div class="search-anim" style="margin-bottom:8px"><div class="search-dots"><span></span><span></span><span></span></div><span class="search-text">Ищется…</span></div>') +
         '<div class="req-actions">' +
           '<button class="req-btn req-btn-stop" data-cancel="' + req.id + '">Остановить</button>' +
@@ -889,9 +1009,9 @@ async function loadActiveRequests() {
             ? '<button class="req-btn req-btn-go" data-deal-offer="' + matchedOffer.id + '">Перейти к сделке</button>'
             : '<div style="display:flex;align-items:center;justify-content:center;opacity:.45;font-size:12px;font-weight:600">Ищем предложение…</div>') +
         '</div>';
+
       list.appendChild(el);
 
-      // Bind deal button
       if (matchedOffer) {
         el.querySelector('[data-deal-offer]')?.addEventListener('click', () => reserveOffer(matchedOffer));
       }
@@ -900,16 +1020,26 @@ async function loadActiveRequests() {
     list.querySelectorAll('[data-cancel]').forEach(btn => {
       btn.addEventListener('click', async () => {
         const id = btn.getAttribute('data-cancel');
-        btn.disabled = true; btn.textContent = 'Останавливаю…';
+
+        btn.disabled = true;
+        btn.textContent = 'Останавливаю…';
+
         try {
-          await api('/api/exchange/buy_request/cancel', { method: 'POST', body: JSON.stringify({ id }) });
+          await api('/api/exchange/buy_request/cancel', {
+            method: 'POST',
+            body: { id }
+          });
+
           await loadActiveRequests();
         } catch {
-          btn.disabled = false; btn.textContent = 'Остановить';
+          btn.disabled = false;
+          btn.textContent = 'Остановить';
         }
       });
     });
-  } catch {}
+  } catch (e) {
+    console.warn('loadActiveRequests error:', e);
+  }
 }
 
 async function submitRequest() {
@@ -917,69 +1047,91 @@ async function submitRequest() {
   const maxRub = parseNum(document.getElementById('reqMax').value);
   const count = Number(document.getElementById('reqCount').value || 1);
 
-  if (!minRub || minRub < 100) { toast('Введите минимальную сумму от 100 ₽'); return; }
-  if (!maxRub || maxRub < minRub) { toast('Максимум должен быть ≥ минимума'); return; }
-  if (maxRub > 5000000) { toast('Максимум 5 000 000 ₽'); return; }
+  if (!minRub || minRub < 100) {
+    toast('Введите минимальную сумму от 100 ₽');
+    return;
+  }
+
+  if (!maxRub || maxRub < minRub) {
+    toast('Максимум должен быть ≥ минимума');
+    return;
+  }
+
+  if (maxRub > 5000000) {
+    toast('Максимум 5 000 000 ₽');
+    return;
+  }
 
   const btn = document.getElementById('submitReqBtn');
-  btn.disabled = true; btn.textContent = 'Отправляем…';
+  btn.disabled = true;
+  btn.textContent = 'Отправляем…';
 
   try {
     const d = await api('/api/exchange/buy_request', {
       method: 'POST',
-      body: JSON.stringify({ minRub, maxRub, count })
+      body: { minRub, maxRub, count }
     });
+
     if (!d?.ok) {
       toast(d?.error || 'Ошибка отправки запроса');
-      btn.disabled = false; btn.textContent = 'Отправить запрос';
+      btn.disabled = false;
+      btn.textContent = 'Отправить запрос';
       return;
     }
-    currentReq = { id: d.id, minRub, maxRub, count, createdAt: d.createdAt || Date.now(), approxRate: d.approxRate };
+
+    currentReq = {
+      id: d.id,
+      minRub,
+      maxRub,
+      count,
+      createdAt: d.createdAt || Date.now(),
+      approxRate: d.approxRate
+    };
+
     document.getElementById('reqMin').value = '';
     document.getElementById('reqMax').value = '';
     document.getElementById('reqCount').value = '1';
-    btn.disabled = false; btn.textContent = 'Отправить запрос';
+
+    btn.disabled = false;
+    btn.textContent = 'Отправить запрос';
+
     startWaiting();
-  } catch(e) {
+  } catch (e) {
     toast('Ошибка: ' + (e.message || 'попробуйте ещё раз'));
-    btn.disabled = false; btn.textContent = 'Отправить запрос';
+    btn.disabled = false;
+    btn.textContent = 'Отправить запрос';
   }
 }
 
-// ══ Wait screen ══════════════════════════════════════════
+// ══ Wait screen ══════════════════════════════════
+
 function startWaiting() {
   foundOffer = null;
   stopWaitPolling();
 
-  const pill = document.getElementById('waitPill');
-  const main = document.getElementById('waitMain');
-  const desc = document.getElementById('waitDesc');
-  const hint = document.getElementById('waitHint');
-  const actions = document.getElementById('waitActions');
-  const box = document.getElementById('offerFoundBox');
-
-  pill.className = 'status-pill pending'; pill.textContent = '⏳ Ищем предложение';
-  main.textContent = 'Запрос принят, подбираем заявку…';
-  desc.textContent = 'Проверяем стакан и уведомим, когда появится совпадение 🤝';
-  hint.textContent = '⏰ У вас 10 минут чтобы взять заявку в работу. Совет: расширьте диапазон на 5–10% для быстрого совпадения.';
-  hint.style.display = '';
-  actions.style.display = 'none';
-  box.style.display = 'none';
+  document.getElementById('waitPill').className = 'status-pill pending';
+  document.getElementById('waitPill').textContent = '⏳ Ищем предложение';
+  document.getElementById('waitMain').textContent = 'Запрос принят, подбираем заявку…';
+  document.getElementById('waitDesc').textContent = 'Проверяем стакан и уведомим, когда появится совпадение 🤝';
+  document.getElementById('waitHint').textContent = '⏰ У вас 10 минут чтобы взять заявку в работу. Совет: расширьте диапазон на 5–10% для быстрого совпадения.';
+  document.getElementById('waitHint').style.display = '';
+  document.getElementById('waitActions').style.display = 'none';
+  document.getElementById('offerFoundBox').style.display = 'none';
 
   show('screenReqWait');
 
-  // Timer countdown
   waitTimerInt = setInterval(() => {
     if (!currentReq) return;
+
     const elapsed = Date.now() - Number(currentReq.createdAt || 0);
     const msLeft = Math.max(0, REQUEST_TTL_MS - elapsed);
+
     if (msLeft <= 0) {
       clearInterval(waitTimerInt);
       setWaitExpired();
     }
   }, 1000);
 
-  // Poll for matching offers every 5 sec
   pollForMatch();
   waitPollInt = setInterval(pollForMatch, 1200);
 }
@@ -987,6 +1139,8 @@ function startWaiting() {
 function stopWaitPolling() {
   clearInterval(waitPollInt);
   clearInterval(waitTimerInt);
+  waitPollInt = null;
+  waitTimerInt = null;
 }
 
 async function pollForMatch() {
@@ -1003,34 +1157,48 @@ async function pollForMatch() {
   waitPollBusy = true;
 
   try {
-    const d = await api('/api/exchange/offers?t=' + Date.now());
-
-    const offers = Array.isArray(d?.offers) ? d.offers : [];
     const min = Number(currentReq.minRub);
     const max = Number(currentReq.maxRub);
 
-    let best = null;
-    let bestScore = Infinity;
-    const mid = (min + max) / 2;
+    const [reqData, offerData] = await Promise.all([
+      api('/api/exchange/buy_requests?t=' + Date.now()),
+      api('/api/exchange/offers?t=' + Date.now())
+    ]);
 
-    for (const o of offers) {
-      const a = Number(o.amountRub);
+    const requests = Array.isArray(reqData?.items) ? reqData.items : [];
+    const freshReq = requests.find(r => String(r.id) === String(currentReq.id));
 
-      if (!isFinite(a) || a < min || a > max) continue;
+    if (freshReq) {
+      const directOffers = Array.isArray(freshReq.matchedOffers) ? freshReq.matchedOffers : [];
 
-      const score = Math.abs(a - mid);
-
-      if (score < bestScore) {
-        bestScore = score;
-        best = o;
+      if (directOffers.length > 0) {
+        foundOffer = directOffers[0];
+        setWaitFound(foundOffer);
+        stopWaitPolling();
+        return;
       }
     }
+
+    const offers = filterFreshOffers(offerData?.offers);
+    const best = findMatchInOffers(offers, min, max);
 
     if (best) {
       foundOffer = best;
       setWaitFound(best);
       stopWaitPolling();
       return;
+    }
+
+    if (freshReq && Array.isArray(freshReq.matchedOfferIds) && freshReq.matchedOfferIds.length > 0) {
+      const offerId = freshReq.matchedOfferIds[0];
+      const byId = offers.find(o => String(o.id) === String(offerId));
+
+      if (byId) {
+        foundOffer = byId;
+        setWaitFound(byId);
+        stopWaitPolling();
+        return;
+      }
     }
   } catch (e) {
     console.warn('pollForMatch error:', e);
@@ -1039,81 +1207,6 @@ async function pollForMatch() {
   }
 }
 
-if (Array.isArray(freshReq.matchedOffers) && freshReq.matchedOffers.length > 0) {
-  foundOffer = freshReq.matchedOffers[0];
-  setWaitFound(foundOffer);
-  stopWaitPolling();
-  return;
-}
-
-        const ids = Array.isArray(freshReq.matchedOfferIds)
-          ? freshReq.matchedOfferIds
-          : [];
-
-        if (ids.length > 0) {
-          const offerId = ids[0];
-
-          const offersData = await api('/api/exchange/offers?t=' + Date.now());
-          const offers = filterFreshOffers(offersData?.offers);
-          const byId = offers.find(o => String(o.id) === String(offerId));
-
-          if (byId) {
-            foundOffer = byId;
-            setWaitFound(byId);
-            stopWaitPolling();
-            return;
-          }
-
-          const minimalOffer = {
-            id: offerId,
-            amountRub: freshReq.amountRub || freshReq.minRub || currentReq.minRub,
-            rate: freshReq.approxRate || rate || 0,
-            method: 'SBP'
-          };
-
-          foundOffer = minimalOffer;
-          setWaitFound(minimalOffer);
-          stopWaitPolling();
-          return;
-        }
-      }
-    } catch (e) {
-      console.warn('buy_requests poll error:', e);
-    }
-
-    try {
-      const d = await api('/api/exchange/offers?t=' + Date.now());
-      const offers = filterFreshOffers(d?.offers);
-
-      let best = null;
-      let bestScore = Infinity;
-
-      for (const o of offers) {
-        const a = Number(o.amountRub);
-        if (!isFinite(a) || a < min || a > max) continue;
-
-        const score = Math.abs(a - mid);
-
-        if (score < bestScore) {
-          bestScore = score;
-          best = o;
-        }
-      }
-
-      if (best) {
-        foundOffer = best;
-        setWaitFound(best);
-        stopWaitPolling();
-        return;
-      }
-    } catch (e) {
-      console.warn('offers poll error:', e);
-    }
-
-  } finally {
-    waitPollBusy = false;
-  }
-}
 function setWaitFound(offer) {
   const pill = document.getElementById('waitPill');
   const main = document.getElementById('waitMain');
@@ -1123,32 +1216,40 @@ function setWaitFound(offer) {
   const box = document.getElementById('offerFoundBox');
   const grid = document.getElementById('offerFoundGrid');
 
-  pill.className = 'status-pill found'; pill.textContent = '🎯 Найдено';
+  pill.className = 'status-pill found';
+  pill.textContent = '🎯 Найдено';
+
   main.textContent = 'Нашлась заявка в стакане!';
   desc.textContent = 'Мы нашли предложение в вашем диапазоне. Нажмите «Перейти к сделке» и оплатите.';
   hint.textContent = '💡 Предложения в P2P могут быстро разбираться. Если не успели — обновите стакан и попробуйте снова.';
 
   const r = Number(offer.rate || rate || 0);
-  const usdt = r > 0 ? (Number(offer.amountRub||0)/r).toFixed(2) : '—';
+  const usdt = r > 0 ? (Number(offer.amountRub || 0) / r).toFixed(2) : '—';
+
   grid.innerHTML =
     cell('Сумма', fmtRub(offer.amountRub) + ' ₽') +
     cell('≈ USDT', usdt) +
     cell('Курс', r > 0 ? r.toFixed(2) + ' ₽' : '—') +
     cell('Метод', methodLabel(offer.method));
-  box.style.display = '';
 
+  box.style.display = '';
   document.getElementById('waitGoBtn').style.display = '';
   actions.style.display = 'flex';
 
-  // Sound notification
   try {
     const ctx = new (window.AudioContext || window.webkitAudioContext)();
-    const osc = ctx.createOscillator(), gain = ctx.createGain();
-    osc.connect(gain); gain.connect(ctx.destination);
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+
+    osc.connect(gain);
+    gain.connect(ctx.destination);
+
     osc.frequency.setValueAtTime(880, ctx.currentTime);
     gain.gain.setValueAtTime(0.1, ctx.currentTime);
     gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.4);
-    osc.start(ctx.currentTime); osc.stop(ctx.currentTime + 0.4);
+
+    osc.start(ctx.currentTime);
+    osc.stop(ctx.currentTime + 0.4);
   } catch {}
 }
 
@@ -1158,22 +1259,22 @@ function cell(k, v) {
 
 function setWaitExpired() {
   stopWaitPolling();
-  const pill = document.getElementById('waitPill');
-  const main = document.getElementById('waitMain');
-  const desc = document.getElementById('waitDesc');
-  const hint = document.getElementById('waitHint');
-  const actions = document.getElementById('waitActions');
 
-  pill.className = 'status-pill expired'; pill.textContent = '⏰ Время вышло';
-  main.textContent = 'Заявка удалена — время истекло';
-  desc.textContent = 'Прошло 10 минут — заявку никто не взял, она удалена автоматически.';
-  hint.textContent = '💡 Расширьте диапазон на 2–5 тыс. ₽ или проверьте предложения напрямую в стакане.';
+  document.getElementById('waitPill').className = 'status-pill expired';
+  document.getElementById('waitPill').textContent = '⏰ Время вышло';
+  document.getElementById('waitMain').textContent = 'Заявка удалена — время истекло';
+  document.getElementById('waitDesc').textContent = 'Прошло 10 минут — заявку никто не взял, она удалена автоматически.';
+  document.getElementById('waitHint').textContent = '💡 Расширьте диапазон на 2–5 тыс. ₽ или проверьте предложения напрямую в стакане.';
   document.getElementById('waitGoBtn').style.display = 'none';
-  actions.style.display = 'flex';
+  document.getElementById('waitActions').style.display = 'flex';
 }
 
 async function goToFoundDeal() {
-  if (!foundOffer) { await loadOffers(); return; }
+  if (!foundOffer) {
+    await loadOffers();
+    return;
+  }
+
   await reserveOffer(foundOffer);
 }
 
@@ -1182,7 +1283,7 @@ async function init() {
 
   await ensureTelegramAuth();
 
-  const linkedOfferId = getUrlParam("offerId");
+  const linkedOfferId = getUrlParam('offerId');
 
   if (linkedOfferId) {
     await openOfferFromLink(linkedOfferId);
