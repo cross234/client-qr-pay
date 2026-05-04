@@ -4,6 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
 <title>Подтверждение оплаты — Moon Wallet</title>
+<script src="https://telegram.org/js/telegram-web-app.js"></script>
 <style>
 :root {
   --bg: #0a1628; --card: #0f1d35; --card2: #132444; --border: #1c2f52;
@@ -202,8 +203,51 @@ function getToken() {
   try {
     return localStorage.getItem('auth_token') ||
            localStorage.getItem('mw_token') ||
-           sessionStorage.getItem('auth_token') || '';
-  } catch { return ''; }
+           sessionStorage.getItem('auth_token') ||
+           sessionStorage.getItem('mw_token') ||
+           '';
+  } catch {
+    return '';
+  }
+}
+
+function saveToken(token) {
+  if (!token) return;
+  try {
+    localStorage.setItem('auth_token', token);
+    localStorage.setItem('mw_token', token);
+    sessionStorage.setItem('auth_token', token);
+    sessionStorage.setItem('mw_token', token);
+  } catch {}
+}
+
+async function ensureAuth() {
+  let token = getToken();
+  if (token) return token;
+
+  try {
+    const tg = window.Telegram?.WebApp;
+    const initData = tg?.initData || '';
+
+    if (!initData) return '';
+
+    const res = await fetch(API + '/api/auth/telegram', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ initData })
+    });
+
+    const data = await res.json().catch(() => null);
+
+    if (data?.ok && data.token) {
+      saveToken(data.token);
+      return data.token;
+    }
+  } catch (e) {
+    console.warn('Telegram auth error:', e);
+  }
+
+  return '';
 }
 
 function fmtRub(n) { return Number(n || 0).toLocaleString('ru-RU'); }
@@ -285,26 +329,37 @@ function startDealStatusPolling() {
   stopDealStatusPolling();
 
   pollDealStatus();
-  dealPollInt = setInterval(pollDealStatus, 3000);
+  dealPollInt = setInterval(pollDealStatus, 1500);
 }
 
 async function pollDealStatus() {
   if (!offerId) return;
 
-  const token = getToken();
+  const token = await ensureAuth();
+
+  if (!token) {
+    console.warn('Нет токена пользователя для проверки сделки');
+    return;
+  }
 
   try {
     const res = await fetch(
       API + '/api/exchange/deal/' + encodeURIComponent(offerId) + '?t=' + Date.now(),
       {
         method: 'GET',
-        headers: token ? { 'Authorization': 'Bearer ' + token } : {}
+        headers: {
+          'Authorization': 'Bearer ' + token,
+          'Cache-Control': 'no-cache'
+        }
       }
     );
 
     const data = await res.json().catch(() => ({}));
 
-    if (!data.ok || !data.deal) return;
+    if (!data.ok || !data.deal) {
+      console.warn('deal status response:', data);
+      return;
+    }
 
     const status = String(data.deal.status || '').toUpperCase();
 
@@ -323,7 +378,6 @@ async function pollDealStatus() {
     console.warn('deal status polling error:', e);
   }
 }
-
 function renderFinalSuccess(dealData) {
   const credited =
     dealData.creditedUsdt ||
@@ -417,9 +471,17 @@ async function submitProof() {
   fd.append('pdf1', pdfFile, pdfFile.name);
   fd.append('photo', shotFile, shotFile.name);
 
-  const token = getToken();
-  try {
-    const res = await fetch(API + '/api/exchange/submit_proof', {
+  const token = await ensureAuth();
+
+if (!token) {
+  setStatus('Ошибка авторизации. Откройте приложение через Telegram-бота заново.', 'bad');
+  btn.disabled = false;
+  btn.textContent = 'Отправить на проверку';
+  return;
+}
+
+try {
+  const res = await fetch(API + '/api/exchange/submit_proof', {
       method: 'POST',
       headers: token ? { 'Authorization': 'Bearer ' + token } : {},
       body: fd,
@@ -431,6 +493,7 @@ async function submitProof() {
   document.getElementById('successSection').style.display = 'block';
 
   startDealStatusPolling();
+  toast('Документы отправлены. Ждём подтверждение оператора.');
 } else {
       setStatus('Ошибка: ' + (data.error || 'попробуйте ещё раз'), 'bad');
       btn.disabled = false;
@@ -442,6 +505,12 @@ async function submitProof() {
     btn.textContent = 'Отправить на проверку';
   }
 }
+
+  // Если пользователь обновил страницу или вернулся назад — продолжаем проверять статус сделки
+if (offerId) {
+  startDealStatusPolling();
+}
+  
 </script>
 </body>
 </html>
