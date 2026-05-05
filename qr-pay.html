@@ -5,6 +5,8 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
 <title>QR Оплата</title>
 <script src="https://telegram.org/js/telegram-web-app.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
 <style>
 :root {
   --bg: #0a1628;
@@ -334,6 +336,9 @@ let currentBalance = null;
 let parsedQr = null;
 let bootMeData = null;
 
+let pendingOcrPromise = null;
+let pendingOcrAmount = 0;
+
 function authHeaders(extra = {}) {
   const h = { ...extra };
   if (TOKEN) h['Authorization'] = 'Bearer ' + TOKEN;
@@ -370,6 +375,183 @@ async function fetchWithTimeout(url, options = {}, timeoutMs = 7000) {
   } finally {
     clearTimeout(timer);
   }
+}
+
+  function withSoftTimeout(promise, ms, fallback = null) {
+  return new Promise((resolve) => {
+    const timer = setTimeout(() => resolve(fallback), ms);
+
+    promise
+      .then((value) => {
+        clearTimeout(timer);
+        resolve(value);
+      })
+      .catch(() => {
+        clearTimeout(timer);
+        resolve(fallback);
+      });
+  });
+}
+
+function fileToCanvas(file) {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    const url = URL.createObjectURL(file);
+
+    img.onload = () => {
+      try {
+        const maxSide = 1800;
+        const w = img.naturalWidth || img.width;
+        const h = img.naturalHeight || img.height;
+        const scale = Math.min(1, maxSide / Math.max(w, h));
+
+        const canvas = document.createElement('canvas');
+        canvas.width = Math.max(1, Math.round(w * scale));
+        canvas.height = Math.max(1, Math.round(h * scale));
+
+        const ctx = canvas.getContext('2d', { willReadFrequently: true });
+        ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+
+        URL.revokeObjectURL(url);
+        resolve(canvas);
+      } catch (e) {
+        URL.revokeObjectURL(url);
+        reject(e);
+      }
+    };
+
+    img.onerror = () => {
+      URL.revokeObjectURL(url);
+      reject(new Error('Image load error'));
+    };
+
+    img.src = url;
+  });
+}
+
+function decodeQrFromCanvas(canvas) {
+  if (typeof jsQR !== 'function') {
+    console.warn('jsQR не загрузился');
+    return '';
+  }
+
+  const ctx = canvas.getContext('2d', { willReadFrequently: true });
+  const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+
+  const code = jsQR(imageData.data, canvas.width, canvas.height, {
+    inversionAttempts: 'attemptBoth'
+  });
+
+  return code && code.data ? String(code.data).trim() : '';
+}
+
+function prepareCanvasForOcr(sourceCanvas) {
+  const maxSide = 2200;
+  const scale = Math.min(1.5, maxSide / Math.max(sourceCanvas.width, sourceCanvas.height));
+
+  const canvas = document.createElement('canvas');
+  canvas.width = Math.max(1, Math.round(sourceCanvas.width * scale));
+  canvas.height = Math.max(1, Math.round(sourceCanvas.height * scale));
+
+  const ctx = canvas.getContext('2d', { willReadFrequently: true });
+  ctx.filter = 'grayscale(1) contrast(1.9) brightness(1.08)';
+  ctx.drawImage(sourceCanvas, 0, 0, canvas.width, canvas.height);
+
+  return canvas;
+}
+
+function parseRubNumber(raw) {
+  let s = String(raw || '')
+    .replace(/\s+/g, '')
+    .replace(',', '.')
+    .replace(/[^\d.]/g, '');
+
+  if (!s) return 0;
+
+  const n = Number(s);
+  if (!Number.isFinite(n) || n <= 0) return 0;
+
+  return Math.round(n * 100) / 100;
+}
+
+function extractRubAmountFromOcrText(text) {
+  const t = String(text || '')
+    .replace(/\n+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .replace(/₽/g, ' ₽ ')
+    .trim();
+
+  const patterns = [
+    /(?:сумма\s*платежа|сумма|к\s*оплате|итого|оплатить|платеж)[^\d]{0,100}([0-9][0-9\s]*(?:[,.][0-9]{1,2})?)\s*(?:₽|р|руб|rub)?/i,
+    /([0-9][0-9\s]*(?:[,.][0-9]{1,2})?)\s*(?:₽|руб\.?|р\b|rub\b)/i
+  ];
+
+  for (const re of patterns) {
+    const m = t.match(re);
+    if (!m) continue;
+
+    const amount = parseRubNumber(m[1]);
+
+    if (amount > 0 && amount < 10000000) {
+      return amount;
+    }
+  }
+
+  return 0;
+}
+
+async function readAmountFromCanvasByOcr(canvas) {
+  if (!window.Tesseract) {
+    console.warn('Tesseract не загрузился');
+    return 0;
+  }
+
+  const ocrCanvas = prepareCanvasForOcr(canvas);
+
+  let worker = null;
+
+  try {
+    worker = await Tesseract.createWorker('rus+eng');
+    const result = await worker.recognize(ocrCanvas);
+    const text = result?.data?.text || '';
+
+    console.log('OCR text:', text);
+
+    const amount = extractRubAmountFromOcrText(text);
+
+    if (amount > 0) {
+      pendingOcrAmount = amount;
+    }
+
+    return amount;
+  } catch (e) {
+    console.warn('OCR error:', e);
+    return 0;
+  } finally {
+    try {
+      if (worker) await worker.terminate();
+    } catch (_) {}
+  }
+}
+
+function userAlreadyTypedManualAmount() {
+  const manualVisible = $('amountManual').classList.contains('show');
+  const typed = parseFloat($('amountInput').value) || 0;
+  return manualVisible && typed > 0;
+}
+
+function applyResolvedAmountToCurrentQr(amountRub, sourceText) {
+  if (!parsedQr || !amountRub || amountRub <= 0) return;
+  if (userAlreadyTypedManualAmount()) return;
+
+  parsedQr.sum = Number(amountRub);
+
+  if (sourceText) {
+    const label = $('amountManual').querySelector('.label');
+    if (label) label.textContent = sourceText;
+  }
+
+  showPayConfirmation();
 }
 
 async function ensureAuth() {
@@ -455,55 +637,48 @@ $('retryScanBtn').onclick = () => {
 };
 
 function startScan() {
-  if (hasTgScanner) {
-    try {
-      tgApp.showScanQrPopup({ text: 'Наведите камеру на QR-код' }, (data) => {
-        if (data) {
-          try {
-            tgApp.closeScanQrPopup();
-          } catch (_) {}
+  // Важно: для чтения суммы рядом с QR нужен именно кадр/фото.
+  // Telegram showScanQrPopup отдаёт только текст QR, без изображения.
+  pendingOcrPromise = null;
+  pendingOcrAmount = 0;
 
-          onQrScanned(data);
-          return true;
-        }
-      });
-    } catch (e) {
-      console.warn('TG QR scanner error:', e);
-      $('fileInput').click();
-    }
-  } else if (tgApp && typeof tgApp.showScanQrPopup === 'function') {
-    try {
-      tgApp.showScanQrPopup({ text: 'Наведите камеру на QR-код' }, (data) => {
-        if (data) {
-          try {
-            tgApp.closeScanQrPopup();
-          } catch (_) {}
-
-          onQrScanned(data);
-          return true;
-        }
-      });
-    } catch (e) {
-      $('fileInput').click();
-    }
-  } else {
-    $('fileInput').click();
-  }
+  $('fileInput').value = '';
+  $('fileInput').click();
 }
-
-$('fileInput').addEventListener('change', function(e) {
+$('fileInput').addEventListener('change', async function(e) {
   const file = e.target.files[0];
   if (!file) return;
 
-  const reader = new FileReader();
+  $('scanSection').style.display = 'none';
+  $('payConfirm').classList.remove('show');
+  $('qrError').classList.remove('show');
+  $('resolvingCard').classList.add('show');
+  $('resolvingCard').querySelector('.title').textContent = 'Читаем QR-код...';
+  $('resolvingCard').querySelector('.desc').textContent = 'Пробуем найти QR и сумму рядом с ним';
 
-  reader.onload = (ev) => {
-    const dataUrl = ev.target.result || '';
-    const b64 = String(dataUrl).split(',')[1] || '';
-    onQrScanned('QR_FROM_IMAGE:' + b64);
-  };
+  try {
+    const canvas = await fileToCanvas(file);
+    const qrText = decodeQrFromCanvas(canvas);
 
-  reader.readAsDataURL(file);
+    if (!qrText) {
+      $('resolvingCard').classList.remove('show');
+      showQrError('', 'На фото не удалось найти QR-код.');
+      return;
+    }
+
+    // OCR запускаем параллельно, но ручной ввод покажем быстро
+    pendingOcrPromise = withSoftTimeout(readAmountFromCanvasByOcr(canvas), 5000, 0);
+
+    $('resolvingCard').classList.remove('show');
+
+    await onQrScanned(qrText);
+  } catch (err) {
+    console.warn('Image QR scan error:', err);
+    $('resolvingCard').classList.remove('show');
+    showQrError('', 'Не удалось обработать изображение.');
+  } finally {
+    this.value = '';
+  }
 });
 
 // ── Parse QR data ──
@@ -690,7 +865,7 @@ function isNspkQr(qrData) {
 
 async function tryResolveRequest(url, options) {
   try {
-    const res = await fetchWithTimeout(url, options, 15000);
+    const res = await fetchWithTimeout(url, options, 2500);
     const data = await res.json().catch(() => ({}));
 
     console.log('QR resolve attempt:', url, data);
@@ -715,7 +890,7 @@ async function resolveAmountFromServer(qrData) {
 
   const attempts = [];
 
-  // 1. Основной способ — отправляем ПОЛНУЮ строку QR
+  // 1. Основной способ — полная строка QR
   attempts.push({
     url: BASE + '/api/qr/resolve?t=' + Date.now(),
     options: {
@@ -726,14 +901,14 @@ async function resolveAmountFromServer(qrData) {
       }),
       body: JSON.stringify({
         qrData: raw,
-        debug: true
+        debug: false
       })
     }
   });
 
-  // 2. Запасной способ через старый роут, но тоже с полной ссылкой
+  // 2. Старый роут, но тоже с полной ссылкой
   attempts.push({
-    url: BASE + '/api/qr/resolve-nspk?data=' + encodeURIComponent(raw) + '&debug=1&t=' + Date.now(),
+    url: BASE + '/api/qr/resolve-nspk?data=' + encodeURIComponent(raw) + '&t=' + Date.now(),
     options: {
       method: 'GET',
       headers: authHeaders({
@@ -742,10 +917,10 @@ async function resolveAmountFromServer(qrData) {
     }
   });
 
-  // 3. Если это qr.nspk.ru, отдельно пробуем только код
+  // 3. Если это NSPK — отдельно пробуем только код
   if (nspkCode) {
     attempts.push({
-      url: BASE + '/api/qr/resolve-nspk?code=' + encodeURIComponent(nspkCode) + '&debug=1&t=' + Date.now(),
+      url: BASE + '/api/qr/resolve-nspk?code=' + encodeURIComponent(nspkCode) + '&t=' + Date.now(),
       options: {
         method: 'GET',
         headers: authHeaders({
@@ -755,17 +930,20 @@ async function resolveAmountFromServer(qrData) {
     });
   }
 
-  for (const attempt of attempts) {
-    const resolved = await tryResolveRequest(attempt.url, attempt.options);
+  // Важно: запускаем НЕ по очереди, а параллельно.
+  // Иначе было 15 + 15 + 15 секунд ожидания.
+  const results = await Promise.allSettled(
+    attempts.map(a => tryResolveRequest(a.url, a.options))
+  );
 
-    if (resolved && resolved.amountRub > 0) {
-      return resolved;
+  for (const r of results) {
+    if (r.status === 'fulfilled' && r.value && r.value.amountRub > 0) {
+      return r.value;
     }
   }
 
   return null;
 }
-
 // ── On QR scanned ──
 async function onQrScanned(data) {
   if (!data || typeof data !== 'string') {
@@ -773,52 +951,91 @@ async function onQrScanned(data) {
     return;
   }
 
-  // If it's from image upload, we can't decode — show hint
-  if (data.startsWith('QR_FROM_IMAGE:')) {
-    showQrError(data, 'Используйте сканер камеры для распознавания QR-кода.');
-    return;
-  }
-
   parsedQr = parseQrData(data);
 
-  // Accept any payment-like QR. Only show error for clearly non-payment QRs
+  // Принимаем платёжные QR. Ошибку показываем только если QR совсем не похож на оплату.
   if (!parsedQr.isBank) {
     const looksPayable = /\d/.test(data) || /^(https?:|tel:|sbp:)/i.test(data);
+
     if (!looksPayable) {
       showQrError(data, 'Этот QR не похож на платёжный.');
       return;
     }
+
     parsedQr.isBank = true;
   }
 
-  // Если это qr.nspk.ru, почти всегда сумма не лежит прямо в ссылке.
-// Поэтому всегда пробуем запросить сумму через Worker.
-const shouldAskServer =
-  !parsedQr.sum ||
-  parsedQr.sum <= 0 ||
-  isNspkQr(data);
-
-if (shouldAskServer) {
-  $('scanSection').style.display = 'none';
-  $('qrError').classList.remove('show');
-  $('payConfirm').classList.remove('show');
-  $('resolvingCard').classList.add('show');
-
-  const resolved = await resolveAmountFromServer(data);
-
-  $('resolvingCard').classList.remove('show');
-
-  if (resolved && resolved.amountRub > 0) {
-    parsedQr.sum = resolved.amountRub;
-
-    if (resolved.name && !parsedQr.name) parsedQr.name = resolved.name;
-    if (resolved.bankName && !parsedQr.bankName) parsedQr.bankName = resolved.bankName;
-    if (resolved.account && !parsedQr.account) parsedQr.account = resolved.account;
-    if (resolved.bic && !parsedQr.bic) parsedQr.bic = resolved.bic;
-    if (resolved.inn && !parsedQr.inn) parsedQr.inn = resolved.inn;
+  // Если OCR уже успел найти сумму рядом с QR
+  if ((!parsedQr.sum || parsedQr.sum <= 0) && pendingOcrAmount > 0) {
+    parsedQr.sum = pendingOcrAmount;
   }
-}
 
+  // Сразу показываем экран оплаты.
+  // Если суммы нет — пользователь сразу может вводить руками, без ожидания 30–40 секунд.
+  showPayConfirmation();
+
+  const shouldAskServer =
+    !parsedQr.sum ||
+    parsedQr.sum <= 0 ||
+    isNspkQr(data);
+
+  const rawAtStart = data;
+
+  // Фоном пробуем:
+  // 1) достать сумму через Worker;
+  // 2) прочитать сумму рядом с QR через OCR.
+  (async () => {
+    const serverPromise = shouldAskServer
+      ? resolveAmountFromServer(rawAtStart)
+      : Promise.resolve(null);
+
+    const ocrPromise = pendingOcrPromise
+      ? pendingOcrPromise
+      : Promise.resolve(0);
+
+    const [serverResult, ocrAmount] = await Promise.all([
+      serverPromise.catch(() => null),
+      ocrPromise.catch(() => 0)
+    ]);
+
+    // Если пользователь уже пересканировал другой QR — ничего не трогаем
+    if (!parsedQr || parsedQr.raw !== rawAtStart) return;
+
+    if (serverResult && serverResult.amountRub > 0) {
+      parsedQr.sum = Number(serverResult.amountRub);
+
+      if (serverResult.name && !parsedQr.name) parsedQr.name = serverResult.name;
+      if (serverResult.bankName && !parsedQr.bankName) parsedQr.bankName = serverResult.bankName;
+      if (serverResult.account && !parsedQr.account) parsedQr.account = serverResult.account;
+      if (serverResult.bic && !parsedQr.bic) parsedQr.bic = serverResult.bic;
+      if (serverResult.inn && !parsedQr.inn) parsedQr.inn = serverResult.inn;
+
+      applyResolvedAmountToCurrentQr(
+        parsedQr.sum,
+        'Сумма найдена автоматически'
+      );
+
+      return;
+    }
+
+    if (Number(ocrAmount) > 0) {
+      applyResolvedAmountToCurrentQr(
+        Number(ocrAmount),
+        'Сумма найдена рядом с QR-кодом'
+      );
+
+      return;
+    }
+
+    // Ничего не нашли — ручной ввод уже открыт
+    if (!parsedQr.sum || parsedQr.sum <= 0) {
+      const label = $('amountManual').querySelector('.label');
+      if (label) {
+        label.textContent = 'В QR-коде нет суммы — введите вручную';
+      }
+    }
+  })();
+}
   showPayConfirmation();
 }
 
@@ -866,6 +1083,12 @@ function showPayConfirmation() {
     // Manual amount entry
     $('amountFixed').style.display = 'none';
     $('amountManual').classList.add('show');
+    const label = $('amountManual').querySelector('.label');
+if (label) {
+  label.textContent = pendingOcrPromise
+    ? 'Ищем сумму рядом с QR-кодом — можно ввести вручную'
+    : 'В QR-коде нет суммы — введите вручную';
+}
     const inp = $('amountInput');
     inp.value = '';
     setTimeout(() => { try { inp.focus(); } catch(_){} }, 100);
@@ -925,11 +1148,20 @@ function resetToScan() {
   $('scanSection').style.display = '';
   $('payConfirm').classList.remove('show');
   $('qrError').classList.remove('show');
+  $('resolvingCard').classList.remove('show');
   $('errorMsg').classList.remove('show');
   $('insufficient').classList.remove('show');
+
   $('confirmBtn').disabled = false;
   $('confirmBtn').innerHTML = '✅ Подтвердить оплату';
+
   parsedQr = null;
+  pendingOcrPromise = null;
+  pendingOcrAmount = 0;
+
+  try {
+    $('fileInput').value = '';
+  } catch (_) {}
 }
 
 // ── Confirm payment ──
