@@ -637,10 +637,29 @@ $('retryScanBtn').onclick = () => {
 };
 
 function startScan() {
-  // Важно: для чтения суммы рядом с QR нужен именно кадр/фото.
-  // Telegram showScanQrPopup отдаёт только текст QR, без изображения.
   pendingOcrPromise = null;
   pendingOcrAmount = 0;
+
+  if (tgApp && typeof tgApp.showScanQrPopup === 'function') {
+    try {
+      tgApp.showScanQrPopup(
+        { text: 'Наведите камеру на QR-код' },
+        (data) => {
+          if (data) {
+            try {
+              tgApp.closeScanQrPopup();
+            } catch (_) {}
+
+            onQrScanned(data);
+            return true;
+          }
+        }
+      );
+      return;
+    } catch (e) {
+      console.warn('TG QR scanner error:', e);
+    }
+  }
 
   $('fileInput').value = '';
   $('fileInput').click();
